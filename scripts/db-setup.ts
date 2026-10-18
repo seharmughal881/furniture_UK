@@ -1,10 +1,17 @@
 // Creates tables and upserts the catalogue. Run: npm run db:setup
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Pool } from "pg";
 import { SEED_EXTRAS, SEED_MATERIALS, SEED_PRODUCTS, SEED_REVIEWS } from "../src/lib/catalog-data";
 
-process.loadEnvFile?.(join(__dirname, "..", ".env.local"));
+// Settings come from ENV_FILE (e.g. a file made by `vercel env pull`) or .env.local.
+// Variables already set in the shell always win, so `DATABASE_URL=... npm run db:setup` also works.
+const envFile = join(__dirname, "..", process.env.ENV_FILE ?? ".env.local");
+if (existsSync(envFile)) process.loadEnvFile(envFile);
+if (!process.env.DATABASE_URL) {
+  console.error("DATABASE_URL is not set. Put it in .env.local, pass ENV_FILE=..., or set it in the shell.");
+  process.exit(1);
+}
 
 async function main() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });

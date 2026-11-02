@@ -2,14 +2,18 @@
 
 import Link from "next/link";
 import { useEffect, useRef } from "react";
-import { formatPrice, SHIPPING, type CartLine } from "@/lib/types";
+import { whatsappLink } from "@/lib/company";
+import { DELIVERY, formatPrice, type CartLine } from "@/lib/types";
+import { shopifyImage } from "@/lib/images";
 import { useCart } from "./CartProvider";
 
 export function ConfigDots({ line }: { line: CartLine }) {
   const { materialName, materialHex } = useCart();
   const parts = [line.config.fabric, line.config.wood, line.config.metal].filter(Boolean);
+  if (line.variant && parts.length === 0) return <span className="config-dots">{line.variant}</span>;
   return (
     <span className="config-dots">
+      {line.variant && <span>{line.variant}</span>}
       {parts.map((s) => (
         <span key={s} title={materialName(s) ?? s}>
           <i style={{ background: materialHex(s) ?? "#ccc" }} />
@@ -37,7 +41,7 @@ export function QtyStepper({ value, onChange, label }: { value: number; onChange
 export function CartDrawer() {
   const { cart, open, setOpen, setQuantity } = useCart();
   const panel = useRef<HTMLDivElement>(null);
-  const free = SHIPPING.standard.freeOverCents;
+  const free = DELIVERY.freeOverCents;
   const remaining = Math.max(0, free - cart.subtotalCents);
 
   useEffect(() => {
@@ -94,13 +98,14 @@ export function CartDrawer() {
             </div>
             <ul className="drawer-lines">
               {cart.lines.map((l) => (
-                <li key={l.id}>
+                <li key={l.id} className={l.image ? "with-photo" : ""}>
+                  {l.image && <img src={shopifyImage(l.image, 160)} alt="" width={64} height={64} loading="lazy" />}
                   <div>
                     <Link href={`/product/${l.slug}`} onClick={() => setOpen(false)} className="line-name">
                       {l.name}
                     </Link>
                     <ConfigDots line={l} />
-                    <small>Made to order · ships in {l.leadTimeWeeks} weeks</small>
+                    <small>Delivered in {DELIVERY.days}</small>
                   </div>
                   <div className="line-right">
                     <strong>{formatPrice(l.unitPriceCents * l.quantity)}</strong>
@@ -117,13 +122,24 @@ export function CartDrawer() {
                 <span>Subtotal</span>
                 <strong>{formatPrice(cart.subtotalCents)}</strong>
               </div>
-              <p className="hint">
-                Prices include VAT. Delivery {SHIPPING.standard.cents ? `${formatPrice(SHIPPING.standard.cents)}, ` : ""}free over{" "}
-                {formatPrice(SHIPPING.standard.freeOverCents)} to any UK address.
-              </p>
+              <p className="hint">Prices include 5% VAT. Pay cash on delivery.</p>
               <Link href="/checkout" className="btn solid wide" onClick={() => setOpen(false)}>
                 Checkout →
               </Link>
+              <a
+                className="btn wide wa-btn"
+                href={whatsappLink(
+                  "Hello Muscat Furniture, I'd like to order:\n" +
+                    cart.lines
+                      .map((l) => `• ${l.quantity} × ${l.name}${l.variant ? ` (${l.variant})` : ""} — ${formatPrice(l.unitPriceCents * l.quantity)}`)
+                      .join("\n") +
+                    `\nTotal: ${formatPrice(cart.subtotalCents)}`,
+                )}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Send this basket on WhatsApp
+              </a>
             </div>
           </>
         )}

@@ -1,62 +1,67 @@
 import Link from "next/link";
-import { ROOMS } from "@/lib/catalog-data";
+import { CATEGORIES } from "@/lib/catalog-data";
 import { COMPANY } from "@/lib/company";
 import { Newsletter } from "./Newsletter";
+
+const SHOWROOM_CITIES = ["Muscat (Al Hail North)", "Sohar", "Barka", "Al-Bidaya", "Nizwa", "Salalah"];
 
 export function Footer() {
   return (
     <footer className="footer" id="visit">
       <div className="footer-top">
         <div className="footer-big">
-          Made slowly,
+          See it first,
           <br />
-          <em>shown honestly.</em>
+          <em>love it at home.</em>
         </div>
         <Newsletter />
       </div>
       <div className="footer-cols">
         <div>
           <p className="label">Shop</p>
-          <Link href="/shop">All furniture</Link>
-          {ROOMS.map((r) => (
-            <Link key={r.slug} href={`/shop?room=${r.slug}`}>
-              {r.name}
+          <Link href="/shop">All products</Link>
+          {CATEGORIES.slice(0, 7).map((c) => (
+            <Link key={c.slug} href={`/shop?category=${c.slug}`}>
+              {c.name}
+            </Link>
+          ))}
+        </div>
+        <div>
+          <p className="label">Showrooms</p>
+          {SHOWROOM_CITIES.map((c) => (
+            <Link key={c} href="/stores">
+              {c}
             </Link>
           ))}
         </div>
         <div>
           <p className="label">Help</p>
-          <Link href="/help#delivery">Delivery</Link>
-          <Link href="/help#returns">Returns &amp; 100-night trial</Link>
-          <Link href="/help#warranty">Lifetime guarantee</Link>
-          <Link href="/help#care">Care guides</Link>
-          <Link href="/help#weee">Recycling old electricals</Link>
-        </div>
-        <div>
-          <p className="label">Studio</p>
-          <p>
-            14 Carpenter&apos;s Yard
-            <br />
-            Open Thu–Sun, 10–18
-          </p>
+          <Link href="/help#delivery">Delivery across Oman</Link>
+          <Link href="/help#returns">Returns &amp; exchanges</Link>
+          <Link href="/help#payment">Cash on delivery</Link>
           <Link href="/planner">Room planner</Link>
         </div>
         <div>
-          <p className="label">Legal</p>
-          <Link href="/legal#privacy">Privacy policy</Link>
-          <Link href="/legal#terms">Terms of sale</Link>
-          <Link href="/legal#cookies">Cookies</Link>
+          <p className="label">Contact</p>
+          <a href={`tel:${COMPANY.phone.replace(/\s/g, "")}`}>{COMPANY.phone}</a>
+          <a href={`mailto:${COMPANY.email}`}>{COMPANY.email}</a>
+          <a href={COMPANY.instagram} target="_blank" rel="noopener noreferrer">
+            Instagram
+          </a>
+          <a href={COMPANY.facebook} target="_blank" rel="noopener noreferrer">
+            Facebook
+          </a>
+          <Link href="/legal">Privacy &amp; terms</Link>
         </div>
       </div>
       <address className="company">
-        {COMPANY.tradingName} is a trading name of {COMPANY.legalName}, registered in {COMPANY.registeredIn}, company
-        number {COMPANY.companyNumber}. Registered office: {COMPANY.registeredOffice}. VAT number {COMPANY.vatNumber}.
-        Contact: {COMPANY.email} · {COMPANY.phone}.
-        {COMPANY.isPlaceholder && <b> (Placeholder details — replace before launch.)</b>}
+        {COMPANY.tradingName} · {COMPANY.legalName} · Commercial registration {COMPANY.crNumber} · E-commerce licence{" "}
+        {COMPANY.licenceNumber} · VAT {COMPANY.vatNumber} · {COMPANY.address}
+        {COMPANY.isPlaceholder && <b> (Bracketed details are placeholders — the client must supply them.)</b>}
       </address>
       <div className="footer-fine">
-        <span>© 2026 {COMPANY.tradingName}. All prices in GBP and include VAT.</span>
-        <span>Every product on this site is rendered live in your browser with three.js.</span>
+        <span>© 2026 {COMPANY.tradingName}. Prices in Omani rials, VAT included.</span>
+        <span>3D previews are rendered live in your browser.</span>
       </div>
     </footer>
   );

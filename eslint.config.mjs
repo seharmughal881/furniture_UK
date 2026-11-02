@@ -10,6 +10,10 @@ const eslintConfig = defineConfig([
     // inside useFrame by design; the compiler's immutability rule can't model that.
     rules: { "react-hooks/immutability": "off" },
   },
+  {
+    // Product photos come from Shopify's CDN, which resizes them itself (see shopifyImage).
+    rules: { "@next/next/no-img-element": "off" },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

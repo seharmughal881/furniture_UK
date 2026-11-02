@@ -47,15 +47,15 @@ export function PlannerTeaser() {
   return (
     <div className="teaser">
       <div className="teaser-copy above">
-        <p className="label" style={{ color: "#a59c90" }}>
+        <p className="label" style={{ color: "#9a9a9a" }}>
           Room planner
         </p>
         <h2>
-          Lay out your room. <em style={{ color: "#e08a5f" }}>Save it.</em> Send it to us.
+          Plan your room. <em style={{ color: "#ff4d5a" }}>Save it.</em> Order it.
         </h2>
         <p>
-          Drag real Atelier pieces onto a floor plan, turn them, change the hour and watch the lamplight fall. Every
-          layout gets its own link so our studio can quote the whole room.
+          Drag our real sofa sets, bedroom sets and dining tables onto a floor plan, turn them, and watch the light
+          change from afternoon to night. Share the layout with family, or add the whole room to your basket.
         </p>
         <Link href="/planner" className="btn light">
           Open the planner →

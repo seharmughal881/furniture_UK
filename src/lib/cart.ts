@@ -38,7 +38,9 @@ export async function clearCartCookie() {
 export async function readCart(cartId: string | null, db: PoolClient | typeof pool = pool): Promise<Cart> {
   if (!cartId) return { lines: [], count: 0, subtotalCents: 0 };
   const { rows } = await db.query(
-    `SELECT ci.id, p.id AS "productId", p.slug, p.name, p.kind, p.price_cents AS "unitPriceCents",
+    `SELECT ci.id, p.id AS "productId", p.slug, p.name, p.kind, p.images[1] AS image, ci.variant,
+            COALESCE((SELECT (v->>'price_cents')::int FROM jsonb_array_elements(p.variants) v
+                      WHERE v->>'title' = ci.variant AND ci.variant <> '' LIMIT 1), p.price_cents) AS "unitPriceCents",
             p.lead_time_weeks AS "leadTimeWeeks", ci.quantity,
             json_build_object('fabric', ci.fabric, 'wood', ci.wood, 'metal', ci.metal) AS config
      FROM cart_items ci JOIN products p ON p.id = ci.product_id

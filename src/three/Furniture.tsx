@@ -133,7 +133,7 @@ export function Furniture({
 
   const depthMat = useMemo(() => createRevealDepthMaterial(reveal), [reveal]);
   const lineMat = useMemo(
-    () => new THREE.LineBasicMaterial({ color: "#8fd3ff", transparent: true, opacity: 1, depthWrite: false }),
+    () => new THREE.LineBasicMaterial({ color: "#ff4d5a", transparent: true, opacity: 1, depthWrite: false }),
     [],
   );
 

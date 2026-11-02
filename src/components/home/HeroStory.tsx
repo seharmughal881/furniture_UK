@@ -2,6 +2,7 @@
 
 import { PerspectiveCamera, View } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import type { Material, Palette } from "@/lib/types";
@@ -54,6 +55,17 @@ function CameraRig({ progress }: { progress: React.RefObject<number> }) {
       pos.current.sub(target.current).multiplyScalar(1 + (1 - aspect) * 1.3).add(target.current);
       target.current.x = target.current.x * 0.2;
     }
+    // opening shot: keep the flying parts clear of the headline — the sofa sits to the right on wide
+    // screens and below the text on phones; the offset fades out as the sofa finishes building
+    const open = 1 - smooth(0.05, A_END, progress.current);
+    if (aspect < 1) {
+      // phones: the text sits at the bottom, so the sofa builds in the upper half
+      pos.current.y -= 0.7 * open;
+      target.current.y -= 0.7 * open;
+    } else {
+      pos.current.x -= 1.1 * open;
+      target.current.x -= 1.1 * open;
+    }
     pos.current.x += pointer.x * 0.25;
     pos.current.y += pointer.y * 0.12;
     const k = 1 - Math.exp(-dt * 4);
@@ -81,7 +93,8 @@ function HeroScene({ progress, palette }: { progress: React.RefObject<number>; p
       <CameraRig progress={progress} />
       <SceneLights hour={hour} shadowSize={5} />
       <ShadowFloor />
-      <Furniture kind="sofa" palette={palette} spread={1.5} assembly={() => smooth(0.015, A_END, progress.current)} />
+      {/* parts start close together and slightly into the build, so the first screen already reads as a sofa */}
+      <Furniture kind="sofa" palette={palette} spread={0.95} assembly={() => smooth(-0.07, A_END, progress.current)} />
       {EXTRAS.map((e, i) => (
         <Furniture
           key={e.kind}
@@ -98,7 +111,8 @@ function HeroScene({ progress, palette }: { progress: React.RefObject<number>; p
   );
 }
 
-export function HeroStory({ materials }: { materials: Material[] }) {
+/** `photo`: a real Muscat Furniture room photo shown as the phone's first screen (fades out on scroll). */
+export function HeroStory({ materials, photo }: { materials: Material[]; photo?: string | null }) {
   const fabrics = materials.filter((m) => m.role === "fabric");
   const woods = materials.filter((m) => m.role === "wood");
   const metals = materials.filter((m) => m.role === "metal");
@@ -113,21 +127,28 @@ export function HeroStory({ materials }: { materials: Material[] }) {
   const [chapter, setChapter] = useState(0);
 
   useEffect(() => {
-    const bp = new THREE.Color("#0d1726");
-    const bone = new THREE.Color("#ece6dc");
+    const bp = new THREE.Color("#120d0f"); // warm near-black, matching the dark sections below
+    const bone = new THREE.Color("#ffffff");
     const top = new THREE.Color();
     const bottom = new THREE.Color();
     const ink = new THREE.Color();
     let id = 0;
     let lastChapter = -1;
+    let last = performance.now();
+    // touch screens scroll natively (no smooth wheel), so the story eases after the thumb instead
+    // of jumping with every flick; mouse and trackpad keep following the scroll exactly
+    const touch = window.matchMedia("(pointer: coarse)").matches;
 
-    const tick = () => {
+    const tick = (now: number) => {
       id = requestAnimationFrame(tick);
+      const dt = Math.min(0.1, (now - last) / 1000);
+      last = now;
       const el = section.current;
       if (!el) return;
       const st = el;
       const rect = el.getBoundingClientRect();
-      const p = clamp01(-rect.top / (rect.height - window.innerHeight));
+      const target = clamp01(-rect.top / (rect.height - window.innerHeight));
+      const p = touch ? progress.current + (target - progress.current) * (1 - Math.exp(-dt * 7)) : target;
       progress.current = p;
 
       // Background: blueprint navy -> bone during assembly, then sky by time of day.
@@ -137,12 +158,14 @@ export function HeroStory({ materials }: { materials: Material[] }) {
       top.copy(bp).lerp(bone, build).lerp(new THREE.Color(d.skyTop), sky);
       bottom.copy(bp).lerp(bone, build).lerp(new THREE.Color(d.skyBottom), sky);
       const night = smooth(0.4, 0.9, d.glow) * sky;
-      ink.set("#f4f0e8").lerp(new THREE.Color("#1c1915"), build * (1 - night));
+      ink.set("#ffffff").lerp(new THREE.Color("#111111"), build * (1 - night));
       st.style.setProperty("--sky-top", `#${top.getHexString()}`);
       st.style.setProperty("--sky-bottom", `#${bottom.getHexString()}`);
       st.style.setProperty("--stage-ink", `#${ink.getHexString()}`);
       st.style.setProperty("--grid-opacity", String(1 - build));
-      st.style.setProperty("--accent-live", night > 0.5 ? "#ffb46b" : "#b4532a");
+      st.style.setProperty("--hero-photo", String(1 - smooth(0.004, 0.06, p)));
+      st.style.setProperty("--accent-live", night > 0.5 ? "#d9b77a" : "#c8102e"); // gold under lamplight
+      st.style.setProperty("--clock-ink", night > 0.5 ? "#d9b77a" : "inherit");
       if (clock.current) clock.current.textContent = formatHour(hourAt(p));
 
       const c = p < A_END - 0.04 ? 0 : p < B_END ? 1 : 2;
@@ -156,21 +179,26 @@ export function HeroStory({ materials }: { materials: Material[] }) {
   }, []);
 
   return (
-    <section ref={section} className="story" aria-label="Watch the Loma sofa being built">
+    <section ref={section} className="story" aria-label="Watch a Muscat Furniture sofa being built">
       <div className="stage-bg">
         <div className="stage-grid" />
       </div>
       <div className="stage">
+        {photo && (
+          <div className="hero-photo" aria-hidden>
+            <img src={photo} alt="" fetchPriority="high" decoding="async" />
+          </div>
+        )}
         <View className="stage-view">
           <HeroScene progress={progress} palette={palette} />
         </View>
 
         <div className="blueprint-spec" style={{ opacity: chapter === 0 ? 1 : 0 }} aria-hidden>
-          LOMA / 3-SEAT SOFA
+          3-SEAT SOFA / LIVE 3D
           <br />
           W 2100 · D 900 · H 820 mm
           <br />
-          21 PARTS · 1 MAKER · 64 HRS
+          21 PARTS · ASSEMBLED AS YOU SCROLL
         </div>
 
         <div className="progress-rail above" aria-hidden>
@@ -182,14 +210,46 @@ export function HeroStory({ materials }: { materials: Material[] }) {
         </div>
 
         <div className={`chapter chapter-a ${chapter === 0 ? "on" : ""}`}>
-          <p className="label">01 — Assembly</p>
-          <h1>
-            Furniture that <em>builds itself</em> in front of you.
+          <p className="hero-badge">
+            <i aria-hidden /> Live 3D · Muscat Furniture
+          </p>
+          <h1 className="rise">
+            {["Furniture", "that"].map((w, i) => (
+              <span key={w} style={{ "--i": i } as React.CSSProperties}>
+                {w}
+              </span>
+            ))}
+            <em>
+              {["builds", "itself"].map((w, i) => (
+                <span key={w} style={{ "--i": i + 2 } as React.CSSProperties}>
+                  {w}
+                </span>
+              ))}
+            </em>
+            {["in", "front", "of", "you."].map((w, i) => (
+              <span key={w} style={{ "--i": i + 4 } as React.CSSProperties}>
+                {w}
+              </span>
+            ))}
           </h1>
           <p>
-            Every Atelier piece is drawn, joined and finished by one maker. Scroll, and watch the Loma sofa come
-            together part by part, exactly as it is made.
+            Oman&apos;s first furniture store you can explore in 3D. Scroll to watch a sofa build itself, then try
+            fabrics and plan your room before you order.
           </p>
+          <div className="hero-ctas">
+            <Link href="/shop" className="btn solid">
+              Shop now
+            </Link>
+            <Link href="/planner" className="btn hero-ghost">
+              <span className="long">Plan your room in 3D</span>
+              <span className="short">Plan in 3D</span>
+            </Link>
+          </div>
+          <ul className="hero-trust">
+            <li>Cash on delivery</li>
+            <li>Delivery in 4–6 days</li>
+            <li>6 showrooms in Oman</li>
+          </ul>
         </div>
 
         <div className={`chapter ${chapter === 1 ? "on" : ""}`}>
@@ -236,7 +296,10 @@ export function HeroStory({ materials }: { materials: Material[] }) {
           <h2 style={{ fontSize: "clamp(32px, 3.6vw, 56px)" }}>
             From midday sun to <em>lamplight.</em>
           </h2>
-          <p>Keep scrolling to move the sun. See how your room really feels at 10 pm, before anything ships.</p>
+          <p>Keep scrolling to move the sun. See how your majlis really feels at night, before anything is delivered.</p>
+          <Link href="/shop?category=lighting" className="hero-link">
+            Explore lighting →
+          </Link>
         </div>
 
         <div className="scroll-cue" style={{ opacity: chapter === 0 ? 1 : 0 }}>

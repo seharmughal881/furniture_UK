@@ -2,7 +2,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Pool } from "pg";
-import { SEED_EXTRAS, SEED_MATERIALS, SEED_PRODUCTS, SEED_REVIEWS } from "../src/lib/catalog-data";
+import { SEED_EXTRAS, SEED_MATERIALS, SEED_PRODUCTS } from "../src/lib/catalog-data";
 
 // Settings come from ENV_FILE (e.g. a file made by `vercel env pull`) or .env.local.
 // Variables already set in the shell always win, so `DATABASE_URL=... npm run db:setup` also works.
@@ -52,15 +52,8 @@ async function main() {
       ]);
     }
 
-    // Sample reviews are re-seeded each run; real customer reviews (is_demo = false) are never touched.
+    // No sample reviews: this is a real shop now (see scripts/import-muscat.ts).
     await client.query("DELETE FROM reviews WHERE is_demo");
-    for (const r of SEED_REVIEWS) {
-      await client.query(
-        `INSERT INTO reviews (product_id, author, rating, title, body, is_demo)
-         SELECT id, $2, $3, $4, $5, true FROM products WHERE slug = $1`,
-        [r.slug, r.author, r.rating, r.title, r.body],
-      );
-    }
 
     await client.query("COMMIT");
     const { rows } = await client.query(

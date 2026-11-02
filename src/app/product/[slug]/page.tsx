@@ -3,13 +3,17 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { Footer } from "@/components/Footer";
 import { ProductExperience } from "@/components/product/ProductExperience";
+import { RecentlyViewed } from "@/components/product/RecentlyViewed";
 import { Reviews } from "@/components/product/Reviews";
-import { ShopGrid } from "@/components/shop/ShopGrid";
-import { getMaterials, getProduct, getProducts, getReviews } from "@/lib/catalog";
+import { ProductGrid } from "@/components/shop/ProductCard";
+import { getMaterials, getProduct, getProductIndex, getProducts, getReviews } from "@/lib/catalog";
+import { getDepth } from "@/lib/depth";
+import { shopifyImage } from "@/lib/images";
 
 export async function generateStaticParams() {
+  // prerender the best sellers; the rest render on first visit and are then cached
   const products = await getProducts();
-  return products.map((p) => ({ slug: p.slug }));
+  return products.slice(0, 40).map((p) => ({ slug: p.slug }));
 }
 
 export async function generateMetadata(props: PageProps<"/product/[slug]">): Promise<Metadata> {
@@ -18,22 +22,24 @@ export async function generateMetadata(props: PageProps<"/product/[slug]">): Pro
   if (!product) return {};
   return {
     title: product.name,
-    description: `${product.tagline} ${product.description}`.slice(0, 160),
+    description: product.description.slice(0, 160),
     alternates: { canonical: `/product/${product.slug}` },
-    openGraph: { title: product.name, description: product.tagline },
+    openGraph: { title: product.name, description: product.tagline, images: product.images.slice(0, 1) },
   };
 }
 
 async function Product({ params }: { params: PageProps<"/product/[slug]">["params"] }) {
   const { slug } = await params;
-  const [product, materials, all] = await Promise.all([getProduct(slug), getMaterials(), getProducts()]);
+  const [product, materials, index, depth] = await Promise.all([
+    getProduct(slug),
+    getMaterials(),
+    getProductIndex(),
+    getDepth(slug),
+  ]);
   if (!product) notFound();
   const reviews = await getReviews(product.id);
 
-  const related = [
-    ...all.filter((p) => p.slug !== product.slug && p.category === product.category),
-    ...all.filter((p) => p.slug !== product.slug && p.category !== product.category),
-  ].slice(0, 3);
+  const related = index.filter((p) => p.slug !== product.slug && p.category === product.category).slice(0, 4);
 
   // Structured data for search engines. Sample reviews are excluded from the rating.
   const real = reviews.filter((r) => !r.isDemo);
@@ -41,18 +47,16 @@ async function Product({ params }: { params: PageProps<"/product/[slug]">["param
     "@context": "https://schema.org",
     "@type": "Product",
     name: product.name,
-    description: product.description,
-    sku: product.slug,
-    brand: { "@type": "Brand", name: "Atelier" },
+    description: product.description.slice(0, 500),
+    sku: product.sku || product.slug,
+    image: product.images.slice(0, 3),
+    brand: { "@type": "Brand", name: "Muscat Furniture" },
     category: product.category,
-    width: { "@type": "QuantitativeValue", value: product.widthCm, unitCode: "CMT" },
-    depth: { "@type": "QuantitativeValue", value: product.depthCm, unitCode: "CMT" },
-    height: { "@type": "QuantitativeValue", value: product.heightCm, unitCode: "CMT" },
     offers: {
       "@type": "Offer",
-      price: (product.priceCents / 100).toFixed(2),
-      priceCurrency: "GBP",
-      availability: "https://schema.org/PreOrder",
+      price: (product.priceCents / 1000).toFixed(3),
+      priceCurrency: "OMR",
+      availability: product.inStock ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
       url: `/product/${product.slug}`,
     },
     ...(real.length && {
@@ -64,22 +68,36 @@ async function Product({ params }: { params: PageProps<"/product/[slug]">["param
     }),
   };
 
+  const hero = product.images[0];
   return (
     <>
+      {hero && (
+        <link
+          rel="preload"
+          as="image"
+          href={shopifyImage(hero, 800)}
+          imageSrcSet={[400, 800, 1400].map((w) => `${shopifyImage(hero, w)} ${w}w`).join(", ")}
+          imageSizes="(max-width: 999px) 100vw, 55vw"
+          fetchPriority="high"
+        />
+      )}
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }}
       />
-      <ProductExperience product={product} materials={materials} />
+      <ProductExperience product={product} materials={materials} depth={depth} />
       <Reviews productSlug={product.slug} productName={product.name} initial={reviews} />
-      <section className="section related" aria-labelledby="related-title">
-        <div className="section-head">
-          <h2 id="related-title">
-            Pairs <em>well with</em>
-          </h2>
-        </div>
-        <ShopGrid products={related} all={all} materials={materials} />
-      </section>
+      {related.length > 0 && (
+        <section className="section related" aria-labelledby="related-title">
+          <div className="section-head">
+            <h2 id="related-title">
+              You may <em>also like</em>
+            </h2>
+          </div>
+          <ProductGrid products={related} />
+        </section>
+      )}
+      <RecentlyViewed index={index} current={product.slug} />
     </>
   );
 }

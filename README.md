@@ -1,4 +1,42 @@
-# Atelier — furniture that builds itself
+# Muscat Furniture — 3D furniture store for Oman
+
+> Built on the "Atelier" 3D engine. The live catalogue (632 products) is imported from the client's Shopify store,
+> muscatfurniture.com. See `docs/MUSCAT-MARKET-ANALYSIS.md` for the competitor analysis.
+
+## Sync the catalogue from Shopify
+
+```bash
+npm run import:muscat            # import the saved snapshot in data/muscat-import
+npm run import:muscat -- --fetch # download the latest products from muscatfurniture.com, then import
+```
+
+The client keeps managing products, prices and stock in Shopify; re-run the import (or schedule it) to update this site.
+
+## AI 3D models of real products (room planner)
+
+The planner can turn each product photo into a real 3D model of that exact piece, using an
+image-to-3D AI model on fal.ai (default: Hunyuan 3D 2.1). Each product is generated **once**; the GLB
+is downloaded to `data/models/` and served from `/api/models/<slug>/file`, so it is instant afterwards.
+
+1. Create a key at https://fal.ai/dashboard/keys and add it to `.env.local` (never commit it):
+   `FAL_KEY=...`  (optional: `FAL_3D_MODEL`, `MAX_3D_PER_DAY` — see `.env.example`)
+2. Pre-generate every furniture product so customers never wait:
+   `npm run models:generate`  (or `npm run models:generate -- dublin preston-dresser`, `-- --retry`)
+3. Restart the server. Without a key the planner falls back to product photos / simple 3D.
+
+Best results come from photos of the product alone on a white background.
+
+### Free option (no API key, no payment): Google Colab + TripoSR
+
+1. `npm run models:list` → writes `data/models-jobs.json` (furniture products without a 3D model yet).
+2. Open `tools/make-3d-models-colab.ipynb` in https://colab.research.google.com (File → Upload notebook),
+   choose **Runtime → Change runtime type → T4 GPU**, and run the cells. Upload `models-jobs.json` when asked.
+   It converts every photo with TripoSR (MIT licence) and downloads `muscat-3d-models.zip`.
+3. `npm run models:import -- ~/Downloads/muscat-3d-models.zip` → the planner shows them as real 3D models.
+
+---
+
+## Original 3D engine notes
 
 A furniture showroom rendered live with three.js. Nothing is a photo or a downloaded 3D model:
 every piece is generated in code, so it can assemble itself, change material and be lit at any hour.

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Stars } from "@/components/home/Collection";
+import { Stars } from "./Stars";
 import type { Review } from "@/lib/types";
 
 const fmtDate = (s: string) =>

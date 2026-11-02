@@ -1,25 +1,43 @@
 "use client";
 
-import { OrbitControls, PerspectiveCamera, View } from "@react-three/drei";
+import { Html, OrbitControls, PerspectiveCamera, View } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { useCart } from "@/components/commerce/CartProvider";
-import { formatPrice, type Palette, type Product, type RoomItem } from "@/lib/types";
+import { shopifyImage } from "@/lib/images";
+import { formatPrice, type Palette, type ProductSummary, type RoomItem } from "@/lib/types";
 import { daylightAt, formatHour } from "@/three/daylight";
-import { ROOMS } from "@/lib/catalog-data";
-import { FOOTPRINT, KIND_LABEL, ROLES_FOR, STACKABLE, SURFACE, type FurnitureKind } from "@/three/furniture";
+import { FOOTPRINT, KIND_LABEL, STACKABLE, SURFACE, type FurnitureKind } from "@/three/furniture";
 import { Furniture } from "@/three/Furniture";
+import { analyseProductImage, type ProductLook } from "@/three/productLook";
+import { ProductPhoto } from "@/three/ProductPhoto";
+import { AiModel, useAiModel } from "@/three/AiModel";
+
+/** How furniture is drawn: AI-generated 3D of the real product, its cut-out photo, or simple 3D shapes. */
+export type DisplayMode = "ai" | "photo" | "simple";
+
+// The free AI 3D models (Colab/TripoSR) look rough, so they are switched off; set true to offer them again.
+const AI_MODELS = false;
+import { compositionFootprint, compositionFor } from "@/three/sets";
+import { HEIGHT } from "@/three/furniture";
 import { getProceduralTextures } from "@/three/materials";
 import { SceneLights } from "@/three/SceneLights";
 
 const ROOM = { w: 6, d: 5 };
 const SNAP = 0.05;
-const PALETTE: Palette = { fabric: "#e8e0d2", wood: "#d2b48c", metal: "#2b2b2b" };
-// catalogue slugs matching PALETTE, used when the room goes into the cart
-const PALETTE_SLUGS = { fabric: "boucle-ivory", wood: "white-oak", metal: "black-steel" } as const;
+const BASE_PALETTE: Palette = { fabric: "#e8e0d2", wood: "#6b4a33", metal: "#2b2b2b" };
+const paletteFor = (colour?: string): Palette => ({ ...BASE_PALETTE, fabric: colour || BASE_PALETTE.fabric });
+
+const GROUPS = [
+  { key: "living", name: "Living room" },
+  { key: "bedroom", name: "Bedroom" },
+  { key: "dining", name: "Dining room" },
+  { key: "other", name: "Other" },
+];
+const groupOf = (p: ProductSummary) => (["living", "bedroom", "dining"].includes(p.rooms[0]) ? p.rooms[0] : "other");
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const snap = (v: number) => Math.round(v / SNAP) * SNAP;
@@ -33,36 +51,42 @@ const PRESETS: Record<string, { name: string; spots: Spot[] }> = {
   living: {
     name: "My living room",
     spots: [
-      ["rug", 0, -0.7, PI / 2], ["sofa", 0, -1.75], ["coffeeTable", 0, -0.55], ["armchair", -1.75, -0.45, 1.2],
-      ["sideTable", -1.4, -2.0], ["floorLamp", 1.45, -2.1], ["mediaConsole", 0, 2.0, PI], ["bookshelf", -2.78, 1.2, PI / 2],
+      ["sofa", 0, -1.75], ["coffeeTable", 0, -0.55], ["armchair", -1.75, -0.45, 1.2], ["armchair", 1.75, -0.45, -1.2],
+      ["sideTable", -1.4, -2.05], ["mediaConsole", 0, 2.05, PI],
     ],
   },
   bedroom: {
     name: "My bedroom",
     spots: [
-      ["rug", 0, -0.4, PI / 2], ["bed", 0, -1.35], ["nightstand", -1.2, -2.25], ["nightstand", 1.2, -2.25],
-      ["tableLamp", -1.2, -2.25], ["tableLamp", 1.2, -2.25], ["bench", 0, 0.05], ["dresser", -2.7, 0.3, PI / 2],
+      ["bed", 0, -1.35], ["nightstand", -1.2, -2.25], ["nightstand", 1.2, -2.25], ["dresser", -2.7, 0.3, PI / 2],
       ["wardrobe", 2.62, -1.3, -PI / 2], ["mirror", -2.72, -1.6, PI / 2],
     ],
   },
   dining: {
     name: "My dining room",
     spots: [
-      ["rug", 0, 0, PI / 2], ["diningTable", 0, 0],
+      ["diningTable", 0, 0],
       ["diningChair", -0.45, 0.62, PI], ["diningChair", 0.45, 0.62, PI], ["diningChair", -0.45, -0.62], ["diningChair", 0.45, -0.62],
-      ["diningChair", 1.12, 0, -PI / 2], ["diningChair", -1.12, 0, PI / 2], ["sideboard", 0, -2.22], ["floorLamp", 2.5, -2.15],
-    ],
-  },
-  office: {
-    name: "My home office",
-    spots: [
-      ["rug", 0, -1.1, PI / 2], ["desk", 0, -2.1], ["officeChair", 0.1, -1.45, PI], ["tableLamp", -0.5, -2.25],
-      ["bookshelf", -2.78, -1.2, PI / 2], ["armchair", 1.9, -0.6, -2.2], ["floorLamp", 2.55, -1.4],
+      ["diningChair", 1.12, 0, -PI / 2], ["diningChair", -1.12, 0, PI / 2],
     ],
   },
 };
-const presetItems = (key: string): RoomItem[] =>
-  (PRESETS[key] ?? PRESETS.living).spots.map(([kind, x, z, rot = 0]) => ({ id: uid(), kind, x, z, rot }));
+
+/** The product a preset uses for each kind: the first in stock (a table on its own rather than a set). */
+function defaultsByKind(products: ProductSummary[]) {
+  const m = new Map<FurnitureKind, ProductSummary>();
+  for (const p of products) {
+    if (!p.kind || !p.inStock || m.has(p.kind)) continue;
+    if (p.kind === "diningTable" && /chair|set/i.test(p.name)) continue;
+    m.set(p.kind, p);
+  }
+  return m;
+}
+
+const presetItems = (key: string, defaults: Map<FurnitureKind, ProductSummary>): RoomItem[] =>
+  (PRESETS[key] ?? PRESETS.living).spots
+    .filter(([kind]) => defaults.has(kind))
+    .map(([kind, x, z, rot = 0]) => ({ id: uid(), kind, slug: defaults.get(kind)!.slug, x, z, rot }));
 
 /** Height a stackable item (a table lamp) should sit at: the top of any surface it is placed over. */
 function standHeight(it: RoomItem, items: RoomItem[]) {
@@ -80,7 +104,25 @@ function standHeight(it: RoomItem, items: RoomItem[]) {
   return y;
 }
 
-function Room() {
+export const WALLS = [
+  { name: "White", hex: "#f4f4f1" },
+  { name: "Cream", hex: "#efe6d6" },
+  { name: "Beige", hex: "#d8c4a5" },
+  { name: "Grey", hex: "#b8b8b6" },
+  { name: "Sage", hex: "#a7b39a" },
+  { name: "Brown", hex: "#8a6a4f" },
+  { name: "Navy", hex: "#3a4560" },
+  { name: "Charcoal", hex: "#3a3a3a" },
+];
+export const FLOORS = [
+  { key: "oak", name: "Light oak", hex: "#d6bd96", wood: true },
+  { key: "walnut", name: "Walnut", hex: "#7a5a40", wood: true },
+  { key: "marble", name: "White marble", hex: "#ecebe7", wood: false },
+  { key: "tile", name: "Grey tile", hex: "#9d9d9b", wood: false },
+];
+
+function Room({ wall, floor }: { wall: string; floor: string }) {
+  const f = FLOORS.find((x) => x.key === floor) ?? FLOORS[0];
   const floorMap = useMemo(() => {
     const t = getProceduralTextures().wood.clone();
     t.repeat.set(3, 6);
@@ -88,30 +130,142 @@ function Room() {
     t.needsUpdate = true;
     return t;
   }, []);
+  // the side wall is a touch darker so the corner reads in 3D
+  const side = useMemo(() => "#" + new THREE.Color(wall).multiplyScalar(0.93).getHexString(), [wall]);
   return (
     <group>
       <mesh rotation-x={-Math.PI / 2} receiveShadow>
         <planeGeometry args={[ROOM.w, ROOM.d]} />
-        <meshStandardMaterial map={floorMap} color="#c9b08e" roughness={0.75} />
+        <meshStandardMaterial
+          key={f.key}
+          map={f.wood ? floorMap : null}
+          color={f.hex}
+          roughness={f.wood ? 0.75 : f.key === "marble" ? 0.25 : 0.6}
+        />
       </mesh>
       <gridHelper args={[ROOM.w, ROOM.w * 2, "#8a7457", "#8a7457"]} position-y={0.002} scale={[1, 1, ROOM.d / ROOM.w]}>
-        <lineBasicMaterial attach="material" color="#5a4630" transparent opacity={0.12} />
+        <lineBasicMaterial attach="material" color="#5a4630" transparent opacity={f.wood ? 0.12 : 0.22} />
       </gridHelper>
       {/* two walls so the light has something to land on */}
       <mesh position={[0, 1.3, -ROOM.d / 2 - 0.05]} receiveShadow castShadow>
         <boxGeometry args={[ROOM.w + 0.2, 2.6, 0.1]} />
-        <meshStandardMaterial color="#efe9df" roughness={0.95} />
+        <meshStandardMaterial color={wall} roughness={0.95} />
       </mesh>
       <mesh position={[-ROOM.w / 2 - 0.05, 1.3, 0]} receiveShadow castShadow>
         <boxGeometry args={[0.1, 2.6, ROOM.d]} />
-        <meshStandardMaterial color="#e9e2d6" roughness={0.95} />
+        <meshStandardMaterial color={side} roughness={0.95} />
       </mesh>
     </group>
   );
 }
 
+/** Colours + photo info read from the product's own photo (null until ready / if unavailable). */
+function useProductLook(image: string | null | undefined) {
+  const [look, setLook] = useState<{ url: string; look: ProductLook | null } | null>(null);
+  useEffect(() => {
+    if (!image) return;
+    let alive = true;
+    const url = shopifyImage(image, 600);
+    analyseProductImage(url).then((l) => alive && setLook({ url, look: l }));
+    return () => {
+      alive = false;
+    };
+  }, [image]);
+  return look;
+}
+
+/** One planned product: the real photo (cut-outs, in photo mode) or 3D stand-ins coloured from the photo. */
+function PlacedProduct({
+  kind,
+  product,
+  mode,
+  glow,
+  selected,
+}: {
+  kind: FurnitureKind;
+  product: ProductSummary | undefined;
+  mode: DisplayMode;
+  glow: () => number;
+  selected: boolean;
+}) {
+  const info = useProductLook(product?.image);
+  const look = info?.look;
+  const pieces = useMemo(() => (product ? compositionFor(product.name, kind) : [{ kind, x: 0, z: 0, rot: 0 }]), [product, kind]);
+  const [w, d, cx, cz] = useMemo(() => compositionFootprint(pieces), [pieces]);
+  const palette = look?.palette ?? paletteFor(product?.colour);
+  const ai = useAiModel(product?.slug, mode === "ai");
+  // AI 3D model of the actual product when ready; otherwise its cut-out photo (white-background
+  // photos) while it is being made / in photo mode; otherwise simple 3D shapes
+  const showAi = mode === "ai" && ai.status === "ready";
+  const showPhoto = !showAi && mode !== "simple" && look?.cutout && info;
+  const making = mode === "ai" && ai.status === "queued";
+  const tallest = Math.max(...pieces.map((q) => HEIGHT[q.kind]));
+
+  return (
+    <>
+      {showAi && ai.status === "ready" ? (
+        <group position={[cx, 0, cz]}>
+          <AiModel url={ai.url} width={w} height={tallest * 1.05} />
+        </group>
+      ) : showPhoto ? (
+        <group position={[cx, 0, cz]}>
+          <ProductPhoto url={shopifyImage(product!.image!, 900)} height={tallest * 1.1} maxWidth={Math.max(w * 1.5, 1.2)} />
+        </group>
+      ) : (
+        pieces.map((p, i) => (
+          <group key={`${p.kind}-${i}`} position={[p.x, 0, p.z]} rotation-y={p.rot} scale={[p.scaleX ?? 1, 1, 1]}>
+            <Furniture
+              kind={p.kind}
+              palette={pieces.length > 1 && p.kind === "armchair" && look?.accent ? { ...palette, fabric: look.accent } : palette}
+              spread={0.6}
+              glow={glow}
+              delay={i * 0.12}
+            />
+          </group>
+        ))
+      )}
+      {making && (
+        <Html position={[cx, tallest + 0.35, cz]} center distanceFactor={6} zIndexRange={[20, 0]}>
+          <span className="ai-making">✨ Creating 3D model…</span>
+        </Html>
+      )}
+      {selected && (
+        <mesh rotation-x={-Math.PI / 2} position={[cx, 0.004, cz]} userData={{ noHit: true }}>
+          <planeGeometry args={[w + 0.16, d + 0.16]} />
+          <meshBasicMaterial color="#c8102e" transparent opacity={0.22} depthWrite={false} />
+        </mesh>
+      )}
+    </>
+  );
+}
+
+/**
+ * Whether a ray hit is a real, visible surface of a piece. Furniture also carries edge outlines
+ * (for the build-up animation) that three.js counts as hit anywhere within 1 m of the ray, even
+ * when hidden, so a click on one piece could grab its neighbour. Only solid visible meshes count,
+ * and on product photos only the product itself, not the transparent area around it.
+ */
+function pickable(h: THREE.Intersection) {
+  const o = h.object as THREE.Mesh;
+  if (!o.isMesh || o.userData.noHit) return false;
+  for (let p: THREE.Object3D | null = o; p; p = p.parent) if (!p.visible) return false;
+  const mats = Array.isArray(o.material) ? o.material : [o.material];
+  if (mats.every((m) => !m.visible || (m.transparent && m.opacity < 0.05))) return false;
+  const alpha = o.userData.hitAlpha as ImageData | undefined;
+  if (alpha && h.uv) {
+    const x = Math.min(alpha.width - 1, Math.floor(h.uv.x * alpha.width));
+    const y = Math.min(alpha.height - 1, Math.floor((1 - h.uv.y) * alpha.height));
+    if (alpha.data[(y * alpha.width + x) * 4 + 3] < 128) return false;
+  }
+  return true;
+}
+
 function PlannerScene({
   items,
+  productOf,
+  mode,
+  wall,
+  floor,
   selected,
   hour,
   track,
@@ -119,14 +273,28 @@ function PlannerScene({
   onMove,
 }: {
   items: RoomItem[];
+  productOf: (it: RoomItem) => ProductSummary | undefined;
+  mode: DisplayMode;
+  wall: string;
+  floor: string;
   selected: string | null;
   hour: number;
   track: HTMLDivElement;
   onSelect: (id: string | null) => void;
   onMove: (id: string, x: number, z: number) => void;
 }) {
-  const { camera } = useThree();
+  const { camera, size } = useThree();
   const controls = useRef<OrbitControlsImpl>(null);
+
+  // Fit the whole room in view: on narrow (portrait) screens move the camera further back.
+  const aspect = size.width / Math.max(1, size.height);
+  useEffect(() => {
+    const base = new THREE.Vector3(4.3, 5.0, 6.0);
+    const fit = Math.max(1, 1.45 / aspect);
+    const dir = camera.position.lengthSq() > 0.01 ? camera.position.clone().normalize() : base.clone().normalize();
+    camera.position.copy(dir.multiplyScalar(base.length() * fit));
+    controls.current?.update();
+  }, [aspect, camera]);
   const groups = useRef(new Map<string, THREE.Group>());
   const hourRef = useRef(hour);
   // Latest callbacks for the native listeners below.
@@ -154,9 +322,9 @@ function PlannerScene({
       if ((e.target as HTMLElement).closest("button, input")) return;
       downAt = { x: e.clientX, y: e.clientY };
       toRay(e);
-      const hits = ray.intersectObjects([...groups.current.values()], true);
-      if (!hits.length) return;
-      let obj: THREE.Object3D | null = hits[0].object;
+      const first = ray.intersectObjects([...groups.current.values()], true).find(pickable);
+      if (!first) return;
+      let obj: THREE.Object3D | null = first.object;
       while (obj && !obj.userData.itemId) obj = obj.parent;
       if (!obj) return;
       const id = obj.userData.itemId as string;
@@ -204,14 +372,13 @@ function PlannerScene({
         enablePan={false}
         enableDamping
         minDistance={4}
-        maxDistance={16}
+        maxDistance={28}
         minPolarAngle={0.2}
         maxPolarAngle={Math.PI / 2.4}
       />
       <SceneLights hour={() => hourRef.current} shadowSize={5} />
-      <Room />
+      <Room wall={wall} floor={floor} />
       {items.map((it) => {
-        const [w, d] = FOOTPRINT[it.kind];
         return (
           <group
             key={it.id}
@@ -223,13 +390,13 @@ function PlannerScene({
               else groups.current.delete(it.id);
             }}
           >
-            <Furniture kind={it.kind} palette={PALETTE} spread={0.6} glow={() => daylightAt(hourRef.current).glow} />
-            {selected === it.id && (
-              <mesh rotation-x={-Math.PI / 2} position-y={0.004}>
-                <planeGeometry args={[w + 0.16, d + 0.16]} />
-                <meshBasicMaterial color="#b4532a" transparent opacity={0.28} depthWrite={false} />
-              </mesh>
-            )}
+            <PlacedProduct
+              kind={it.kind}
+              product={productOf(it)}
+              mode={mode}
+              glow={() => daylightAt(hourRef.current).glow}
+              selected={selected === it.id}
+            />
           </group>
         );
       })}
@@ -237,24 +404,33 @@ function PlannerScene({
   );
 }
 
-export function Planner({ products }: { products: Product[] }) {
+export function Planner({ products }: { products: ProductSummary[] }) {
   const router = useRouter();
   const { add: addToCart, busy } = useCart();
   const params = useSearchParams();
   const roomParam = params.get("room");
 
   const startPreset = params.get("preset") ?? "living";
-  const [items, setItems] = useState<RoomItem[]>(() => presetItems(startPreset));
+  const defaults = useMemo(() => defaultsByKind(products), [products]);
+  const [items, setItems] = useState<RoomItem[]>(() => presetItems(startPreset, defaults));
   const [selected, setSelected] = useState<string | null>(null);
   const [hour, setHour] = useState(16);
+  const [wall, setWall] = useState(WALLS[0].hex);
+  const [floor, setFloor] = useState(FLOORS[0].key);
+  const [mode, setMode] = useState<DisplayMode>("simple");
   const [name, setName] = useState(() => (PRESETS[startPreset] ?? PRESETS.living).name);
   const [roomId, setRoomId] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [loadFailed, setLoadFailed] = useState<string | null>(null);
   const [track, setTrack] = useState<HTMLDivElement | null>(null);
 
-  const priceOf = useMemo(() => new Map(products.map((p) => [p.kind, p])), [products]);
-  const total = items.reduce((s, it) => s + (priceOf.get(it.kind)?.priceCents ?? 0), 0);
+  const bySlug = useMemo(() => new Map(products.map((p) => [p.slug, p])), [products]);
+  // older saved rooms have no slug: fall back to the default product for that kind
+  const productOf = useCallback(
+    (it: RoomItem) => (it.slug ? bySlug.get(it.slug) : undefined) ?? defaults.get(it.kind),
+    [bySlug, defaults],
+  );
+  const total = items.reduce((s, it) => s + (productOf(it)?.priceCents ?? 0), 0);
 
   // Load a saved room from the URL.
   useEffect(() => {
@@ -266,6 +442,10 @@ export function Planner({ products }: { products: Product[] }) {
         if (cancelled) return;
         setItems(room.layout);
         setName(room.name);
+        if (room.style?.wall) setWall(room.style.wall);
+        if (room.style?.floor) setFloor(room.style.floor);
+        if (room.style?.mode) setMode(room.style.mode === "ai" && !AI_MODELS ? "simple" : room.style.mode);
+        else if (typeof room.style?.photos === "boolean") setMode(room.style.photos ? "photo" : "simple");
         setRoomId(room.id);
       })
       .catch(() => !cancelled && setLoadFailed(roomParam));
@@ -275,16 +455,70 @@ export function Planner({ products }: { products: Product[] }) {
   }, [roomParam, roomId]);
 
   const applyPreset = (key: string) => {
-    setItems(presetItems(key));
+    setItems(presetItems(key, defaults));
     setSelected(null);
     if (Object.values(PRESETS).some((p) => p.name === name)) setName(PRESETS[key].name);
   };
 
-  const add = (kind: FurnitureKind) => {
+  const [added, setAdded] = useState<{ name: string; image: string | null; replaced: number; at: string } | null>(null);
+  useEffect(() => {
+    if (!added) return;
+    const t = setTimeout(() => setAdded(null), 3500);
+    return () => clearTimeout(t);
+  }, [added]);
+
+  /** Room-space rectangle an item covers (accounts for sets and rotation). */
+  const rectOf = useCallback(
+    (it: { kind: FurnitureKind; x: number; z: number; rot: number }, name?: string) => {
+      const [w, d, cx, cz] = compositionFootprint(compositionFor(name ?? "", it.kind));
+      const quarter = Math.round(it.rot / (Math.PI / 2)) % 2 !== 0;
+      const hw = (quarter ? d : w) / 2;
+      const hd = (quarter ? w : d) / 2;
+      return { x0: it.x + cx - hw, x1: it.x + cx + hw, z0: it.z + cz - hd, z1: it.z + cz + hd };
+    },
+    [],
+  );
+
+  const add = (p: ProductSummary) => {
+    if (!p.kind) return;
+    const kind = p.kind;
     const id = uid();
-    const n = items.length;
-    setItems((xs) => [...xs, { id, kind, x: snap(((n * 0.7) % 3) - 1.2), z: snap(((n * 0.9) % 2.4) - 0.6), rot: 0 }]);
+    const pieces = compositionFor(p.name, kind);
+    const isSet = pieces.length > 1;
+    const xs = items;
+    let keep = xs;
+    let spot = { x: 0, z: 0 };
+    {
+      if (isSet) {
+        // a set replaces the pieces it already contains (old sofas, chairs, tables...)
+        const kinds = new Set(pieces.map((q) => q.kind));
+        keep = xs.filter((it) => !kinds.has(it.kind) || it.kind === "rug");
+
+        const r = rectOf({ kind, x: 0, z: 0, rot: 0 }, p.name);
+        // keep the whole set inside the room
+        spot = {
+          x: snap(Math.min(ROOM.w / 2 - r.x1 - 0.1, Math.max(-ROOM.w / 2 - r.x0 + 0.1, 0))),
+          z: snap(Math.min(ROOM.d / 2 - r.z1 - 0.1, Math.max(-ROOM.d / 2 - r.z0 + 0.1, -0.3))),
+        };
+      } else {
+        // first free spot on a grid, nearest the middle of the room
+        const others = keep.map((it) => rectOf(it, productOf(it)?.name));
+        const cands: { x: number; z: number }[] = [];
+        for (let z = -2.2; z <= 2.2; z += 0.25) for (let x = -2.7; x <= 2.7; x += 0.25) cands.push({ x, z });
+        cands.sort((a, b) => Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z));
+        const fits = (c: { x: number; z: number }) => {
+          const r = rectOf({ kind, x: c.x, z: c.z, rot: 0 }, p.name);
+          if (r.x0 < -ROOM.w / 2 || r.x1 > ROOM.w / 2 || r.z0 < -ROOM.d / 2 || r.z1 > ROOM.d / 2) return false;
+          return others.every((o) => r.x1 + 0.05 < o.x0 || r.x0 - 0.05 > o.x1 || r.z1 + 0.05 < o.z0 || r.z0 - 0.05 > o.z1);
+        };
+        spot = cands.find(fits) ?? { x: 0, z: 0.8 };
+      }
+    }
+    setItems([...keep, { id, kind, slug: p.slug, x: snap(spot.x), z: snap(spot.z), rot: 0 }]);
     setSelected(id);
+    setAdded({ name: p.name, image: p.image, replaced: xs.length - keep.length, at: id });
+    // on phones/tablets the list sits below the room: bring the room back into view to see the piece land
+    if (window.innerWidth < 960) track?.scrollIntoView({ behavior: "smooth", block: "end" });
   };
   const rotate = useCallback(
     (id: string | null) => id && setItems((xs) => xs.map((it) => (it.id === id ? { ...it, rot: it.rot - Math.PI / 4 } : it))),
@@ -315,25 +549,23 @@ export function Planner({ products }: { products: Product[] }) {
   }, [selected, rotate, remove]);
 
   async function addRoomToCart() {
-    const counts = new Map<FurnitureKind, number>();
-    for (const it of items) counts.set(it.kind, (counts.get(it.kind) ?? 0) + 1);
-    const lines = [...counts].flatMap(([kind, quantity]) => {
-      const p = priceOf.get(kind);
-      if (!p) return [];
-      const roles = ROLES_FOR[kind];
-      const config = {
-        fabric: roles.includes("fabric") ? PALETTE_SLUGS.fabric : "",
-        wood: roles.includes("wood") ? PALETTE_SLUGS.wood : "",
-        metal: roles.includes("metal") ? PALETTE_SLUGS.metal : "",
-      };
-      return [{ productSlug: p.slug, quantity: Math.min(20, quantity), config }];
-    });
+    const counts = new Map<string, number>();
+    for (const it of items) {
+      const p = productOf(it);
+      if (p) counts.set(p.slug, (counts.get(p.slug) ?? 0) + 1);
+    }
+    const lines = [...counts].map(([slug, quantity]) => ({
+      productSlug: slug,
+      quantity: Math.min(20, quantity),
+      variant: "",
+      config: { fabric: "", wood: "", metal: "" },
+    }));
     if (lines.length) await addToCart(lines);
   }
 
   async function save() {
     setStatus("Saving…");
-    const body = JSON.stringify({ name, layout: items });
+    const body = JSON.stringify({ name, layout: items, style: { wall, floor, mode } });
     const res = await fetch(roomId ? `/api/rooms/${roomId}` : "/api/rooms", {
       method: roomId ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
@@ -353,7 +585,8 @@ export function Planner({ products }: { products: Product[] }) {
 
   return (
     <main className="planner">
-      <aside className="planner-side">
+      {/* data-lenis-prevent: let this panel scroll natively instead of the page's smooth scroll */}
+      <aside className="planner-side" data-lenis-prevent>
         <div>
           <p className="label">Room planner</p>
           <h1>Arrange your room</h1>
@@ -371,34 +604,81 @@ export function Planner({ products }: { products: Product[] }) {
         <div>
           <p className="label">Start from a room</p>
           <div className="chips preset-chips">
-            {ROOMS.map((r) => (
-              <button key={r.slug} className="chip" onClick={() => applyPreset(r.slug)}>
-                {r.name}
+            {Object.entries(PRESETS).map(([key, p]) => (
+              <button key={key} className="chip" onClick={() => applyPreset(key)}>
+                {p.name.replace("My ", "").replace(/^./, (c) => c.toUpperCase())}
               </button>
             ))}
           </div>
         </div>
+        <div className="room-style">
+          <p className="label">Wall colour</p>
+          <div className="swatch-row" role="group" aria-label="Wall colour">
+            {WALLS.map((c) => (
+              <button
+                key={c.hex}
+                className="swatch sm"
+                style={{ "--c": c.hex } as React.CSSProperties}
+                aria-pressed={wall === c.hex}
+                aria-label={`${c.name} walls`}
+                title={c.name}
+                onClick={() => setWall(c.hex)}
+              />
+            ))}
+          </div>
+          <p className="label">Floor</p>
+          <div className="chips wrap" role="group" aria-label="Floor">
+            {FLOORS.map((f) => (
+              <button key={f.key} className={`chip ${floor === f.key ? "on" : ""}`} onClick={() => setFloor(f.key)}>
+                <i className="floor-dot" style={{ background: f.hex }} /> {f.name}
+              </button>
+            ))}
+          </div>
+          <p className="label">Show furniture as</p>
+          <div className="chips wrap" role="group" aria-label="Furniture display">
+            {AI_MODELS && (
+              <button className={`chip ${mode === "ai" ? "on" : ""}`} onClick={() => setMode("ai")}>
+                ✨ AI 3D (real shape)
+              </button>
+            )}
+            <button className={`chip ${mode === "photo" ? "on" : ""}`} onClick={() => setMode("photo")}>
+              Product photos
+            </button>
+            <button className={`chip ${mode === "simple" ? "on" : ""}`} onClick={() => setMode("simple")}>
+              Simple 3D
+            </button>
+          </div>
+          {AI_MODELS && (
+            <p className="hint">
+              &ldquo;AI 3D&rdquo; turns each product&apos;s photo into a real 3D model of that exact piece (made once, then
+              instant for everyone). While it is being made you see the product photo or a simple stand-in.
+            </p>
+          )}
+        </div>
         <div>
           <p className="label">Add a piece</p>
-          {ROOMS.map((r) => (
-            <details key={r.slug} className="palette-group" open={r.slug === startPreset}>
-              <summary>
-                {r.name} <span>{products.filter((p) => p.rooms[0] === r.slug).length}</span>
-              </summary>
-              <div className="palette-list">
-                {products
-                  .filter((p) => p.rooms[0] === r.slug)
-                  .map((p) => (
-                    <button key={p.slug} className="palette-item" onClick={() => add(p.kind)}>
+          {GROUPS.map((g) => {
+            const list = products.filter((p) => groupOf(p) === g.key);
+            if (!list.length) return null;
+            return (
+              <details key={g.key} className="palette-group" open={g.key === startPreset}>
+                <summary>
+                  {g.name} <span>{list.length}</span>
+                </summary>
+                <div className="palette-list">
+                  {list.map((p) => (
+                    <button key={p.slug} className="palette-item" onClick={() => add(p)}>
+                      {p.image && <img src={shopifyImage(p.image, 120)} alt="" loading="lazy" />}
                       {p.name}
                       <small>
-                        {KIND_LABEL[p.kind]} · {formatPrice(p.priceCents)}
+                        {p.kind ? KIND_LABEL[p.kind] : ""} · {formatPrice(p.priceCents)}
                       </small>
                     </button>
                   ))}
-              </div>
-            </details>
-          ))}
+                </div>
+              </details>
+            );
+          })}
         </div>
         <p className="hint">
           Drag pieces to move them. Drag empty floor to orbit, scroll to zoom. <b>R</b> rotates, <b>Delete</b> removes.
@@ -432,6 +712,10 @@ export function Planner({ products }: { products: Product[] }) {
           {track && (
             <PlannerScene
               items={items}
+              productOf={productOf}
+              mode={mode}
+              wall={wall}
+              floor={floor}
               selected={selected}
               hour={hour}
               track={track}
@@ -441,6 +725,16 @@ export function Planner({ products }: { products: Product[] }) {
           )}
         </View>
 
+        {added && (
+          <div className="planner-added" key={added.at} role="status">
+            {added.image && <img src={shopifyImage(added.image, 120)} alt="" />}
+            <span>
+              <strong>✓ Added to your room</strong>
+              {added.name}
+              {added.replaced > 0 && <small> · replaced {added.replaced} similar piece{added.replaced > 1 ? "s" : ""}</small>}
+            </span>
+          </div>
+        )}
         <div className="planner-toolbar">
           <button disabled={!selected} onClick={() => rotate(selected)}>
             ⟲ Rotate

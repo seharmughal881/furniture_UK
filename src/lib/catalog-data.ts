@@ -261,19 +261,31 @@ export const SEED_MATERIALS: {
 ];
 
 export const CATEGORIES = [
-  { slug: "seating", name: "Seating" },
-  { slug: "tables", name: "Tables" },
-  { slug: "beds", name: "Beds" },
-  { slug: "storage", name: "Storage" },
-  { slug: "lighting", name: "Lighting" },
-  { slug: "decor", name: "Rugs & mirrors" },
+  { slug: "sofas", name: "Sofas", nameAr: "كنب" },
+  { slug: "bedroom-sets", name: "Bedroom sets", nameAr: "غرف نوم" },
+  { slug: "beds", name: "Beds", nameAr: "أسرّة" },
+  { slug: "storage", name: "Wardrobes & dressers", nameAr: "خزائن وتسريحات" },
+  { slug: "dining", name: "Dining", nameAr: "طاولات طعام" },
+  { slug: "tables", name: "Tables & TV units", nameAr: "طاولات" },
+  { slug: "mattresses", name: "Mattresses", nameAr: "مراتب" },
+  { slug: "bedding", name: "Bedding", nameAr: "مفارش" },
+  { slug: "lighting", name: "Lighting", nameAr: "إضاءة" },
+  { slug: "switches", name: "Switches & sockets", nameAr: "مفاتيح كهرباء" },
+  { slug: "sanitary", name: "Sanitary", nameAr: "أدوات صحية" },
+  { slug: "decor", name: "Decor", nameAr: "ديكور" },
 ] as const;
 
 export const ROOMS = [
-  { slug: "living", name: "Living room" },
-  { slug: "bedroom", name: "Bedroom" },
-  { slug: "dining", name: "Dining" },
-  { slug: "office", name: "Home office" },
+  { slug: "living", name: "Living room", nameAr: "غرفة المعيشة" },
+  { slug: "bedroom", name: "Bedroom", nameAr: "غرفة النوم" },
+  { slug: "dining", name: "Dining room", nameAr: "غرفة الطعام" },
+  { slug: "outdoor", name: "Outdoor", nameAr: "خارجي" },
+] as const;
+
+/** Oman's governorates, for delivery addresses. */
+export const GOVERNORATES = [
+  "Muscat", "Dhofar", "Musandam", "Al Buraimi", "Ad Dakhiliyah", "North Al Batinah", "South Al Batinah",
+  "South Ash Sharqiyah", "North Ash Sharqiyah", "Ad Dhahirah", "Al Wusta",
 ] as const;
 
 export const SEED_EXTRAS: Record<string, { category: string; rooms: string[]; details: string[]; care: string }> = {

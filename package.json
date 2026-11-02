@@ -7,7 +7,15 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "db:setup": "tsx scripts/db-setup.ts"
+    "db:setup": "tsx scripts/db-setup.ts",
+    "import:muscat": "tsx scripts/import-muscat.ts",
+    "build:preview": "NEXT_DIST_DIR=.next-preview next build",
+    "preview": "NEXT_DIST_DIR=.next-preview next start -p 3020",
+    "models:generate": "tsx scripts/generate-3d.ts",
+    "models:list": "tsx scripts/models-export-list.ts",
+    "models:import": "tsx scripts/models-import.ts",
+    "depth:make": "tsx scripts/make-depth.ts",
+    "videos:import": "tsx scripts/import-videos.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",
@@ -22,6 +30,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@huggingface/transformers": "4.3.1",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
     "@types/pg": "^8.23.1",

@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { CATEGORIES } from "@/lib/catalog-data";
 import { videosFor } from "@/lib/category-videos";
+import { getContent } from "@/lib/content/read";
 import { shopifyImage } from "@/lib/images";
-import { DELIVERY, formatPrice, type ProductSummary } from "@/lib/types";
+import type { ProductSummary } from "@/lib/types";
 import { CategoryCarousel } from "./CategoryCarousel";
 
 // Line icons; their strokes "draw in" when the section is revealed (see .trust .draw in CSS).
@@ -55,14 +56,11 @@ function Icon({ name }: { name: keyof typeof ICONS }) {
   );
 }
 
-/** The four promises that make people comfortable buying furniture online. */
-export function TrustStrip() {
-  const items: { icon: keyof typeof ICONS; title: string; text: string; href: string }[] = [
-    { icon: "cash", title: "Pay on delivery", text: "Cash when your furniture arrives — no card needed", href: "/help#payment" },
-    { icon: "truck", title: `Delivered in ${DELIVERY.days}`, text: `Anywhere in Oman · free over ${formatPrice(DELIVERY.freeOverCents)}`, href: "/help#delivery" },
-    { icon: "returns", title: "15-day returns", text: "Unused and unassembled items, in original packaging", href: "/help#returns" },
-    { icon: "store", title: "6 showrooms", text: "See it and sit on it before you buy", href: "/stores" },
-  ];
+/** The promises that make people comfortable buying furniture online. Editable in the back office. */
+export async function TrustStrip() {
+  const { items } = await getContent<{
+    items: { icon: keyof typeof ICONS; title: string; text: string; href: string }[];
+  }>("trust");
   return (
     <section className="trust" aria-label="Why shop with us">
       {items.map((it) => (
@@ -77,7 +75,8 @@ export function TrustStrip() {
 }
 
 /** Horizontal, draggable rail of categories using a real product photo for each. */
-export function CategoryRail({ products }: { products: ProductSummary[] }) {
+export async function CategoryRail({ products }: { products: ProductSummary[] }) {
+  const copy = await getContent<{ heading: string; emphasis: string; body: string }>("category_rail");
   const cats = CATEGORIES.map((c) => {
     const inCat = products.filter((p) => p.category === c.slug && p.image);
     return { ...c, count: inCat.length, image: inCat[0]?.image ?? null };
@@ -94,9 +93,9 @@ export function CategoryRail({ products }: { products: ProductSummary[] }) {
     <section className="section cat-section" aria-labelledby="cat-title">
       <div className="section-head">
         <h2 id="cat-title">
-          Shop by <em>category.</em>
+          {copy.heading} <em>{copy.emphasis}</em>
         </h2>
-        <p>Swipe or drag to explore — from sofa sets made in Oman to crystal chandeliers and switches.</p>
+        <p>{copy.body}</p>
       </div>
       <CategoryCarousel
         tiles={cats.map((c) => ({
@@ -112,20 +111,22 @@ export function CategoryRail({ products }: { products: ProductSummary[] }) {
   );
 }
 
-/** Ordering in three plain steps. */
-export function HowToOrder() {
-  const steps: { icon: keyof typeof ICONS; title: string; text: string }[] = [
-    { icon: "cube", title: "Choose", text: "Browse photos, turn furniture in 3D and try fabrics, or plan your whole room." },
-    { icon: "chat", title: "Order your way", text: "Check out online in under a minute, or send your basket to us on WhatsApp." },
-    { icon: "cash", title: "Pay when it arrives", text: `We call to confirm, deliver in ${DELIVERY.days}, and you pay cash on delivery.` },
-  ];
+/** Ordering in a few plain steps. Editable in the back office. */
+export async function HowToOrder() {
+  const copy = await getContent<{
+    heading: string;
+    emphasis: string;
+    body: string;
+    steps: { icon: keyof typeof ICONS; title: string; text: string }[];
+  }>("how_to_order");
+  const steps = copy.steps;
   return (
     <section className="section how" aria-labelledby="how-title">
       <div className="section-head">
         <h2 id="how-title">
-          Ordering is <em>easy.</em>
+          {copy.heading} <em>{copy.emphasis}</em>
         </h2>
-        <p>No account, no card, no surprises.</p>
+        <p>{copy.body}</p>
       </div>
       <ol className="how-steps">
         {steps.map((s, i) => (
@@ -141,34 +142,35 @@ export function HowToOrder() {
   );
 }
 
-// Schematic network (like a metro map, not to scale): north-to-south order is kept,
-// cities are spaced out so every label is readable. Label side: r(ight) l(eft) b(elow) t(op).
-const CITIES: { name: string; x: number; y: number; side: "r" | "l" | "b" | "t"; office?: boolean }[] = [
-  { name: "Muscat · head office", x: 84, y: 44, side: "b", office: true },
-  { name: "Al Hail North", x: 70, y: 34, side: "t" },
-  { name: "Barka", x: 56, y: 40, side: "b" },
-  { name: "Al-Bidaya", x: 42, y: 30, side: "t" },
-  { name: "Sohar", x: 22, y: 18, side: "r" },
-  { name: "Nizwa", x: 60, y: 62, side: "r" },
-  { name: "Salalah", x: 26, y: 86, side: "r" },
-];
-
-/** "We're near you": the showroom network with delivery lines from the Muscat head office. */
-export function ShowroomMap() {
+/**
+ * "We're near you": the showroom network with delivery lines from the head office.
+ *
+ * A schematic network like a metro map, not to scale -- positions are percentages across
+ * the panel, chosen so every label stays readable. All of it is editable in the back
+ * office; the first place in the list is the head office the lines radiate from.
+ */
+export async function ShowroomMap() {
+  const copy = await getContent<{
+    label: string;
+    heading: string;
+    emphasis: string;
+    body: string;
+    buttonLabel: string;
+    cities: { name: string; x: number; y: number; side: "r" | "l" | "b" | "t"; office: boolean }[];
+  }>("showroom_map");
+  const CITIES = copy.cities;
   const hq = CITIES[0];
+  if (!hq) return null;
   return (
     <section className="section map-section" aria-labelledby="map-title">
       <div className="map-copy">
-        <p className="label">Showrooms</p>
+        <p className="label">{copy.label}</p>
         <h2 id="map-title">
-          Real showrooms, <em>near you.</em>
+          {copy.heading} <em>{copy.emphasis}</em>
         </h2>
-        <p>
-          Visit Muscat Furniture in Al Hail North, Sohar, Barka, Al-Bidaya, Nizwa and Salalah — or order online and we
-          deliver from Muscat to every governorate.
-        </p>
+        <p>{copy.body}</p>
         <Link href="/stores" className="btn">
-          Find a showroom →
+          {copy.buttonLabel}
         </Link>
       </div>
       <div className="map-panel" role="img" aria-label="Diagram of Muscat Furniture showrooms across Oman">

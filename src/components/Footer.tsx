@@ -1,18 +1,27 @@
 import Link from "next/link";
 import { CATEGORIES } from "@/lib/catalog-data";
-import { COMPANY } from "@/lib/company";
+import { getCompany } from "@/lib/content/company";
+import { getContent } from "@/lib/content/read";
 import { Newsletter } from "./Newsletter";
 
-const SHOWROOM_CITIES = ["Muscat (Al Hail North)", "Sohar", "Barka", "Al-Bidaya", "Nizwa", "Salalah"];
+type FooterCopy = {
+  bigLine: string;
+  bigLineEmphasis: string;
+  showrooms: { name: string }[];
+  help: { label: string; href: string }[];
+  finePrint: string;
+  finePrintRight: string;
+};
 
-export function Footer() {
+export async function Footer() {
+  const [copy, COMPANY] = await Promise.all([getContent<FooterCopy>("footer"), getCompany()]);
   return (
     <footer className="footer" id="visit">
       <div className="footer-top">
         <div className="footer-big">
-          See it first,
+          {copy.bigLine}
           <br />
-          <em>love it at home.</em>
+          <em>{copy.bigLineEmphasis}</em>
         </div>
         <Newsletter />
       </div>
@@ -28,18 +37,19 @@ export function Footer() {
         </div>
         <div>
           <p className="label">Showrooms</p>
-          {SHOWROOM_CITIES.map((c) => (
-            <Link key={c} href="/stores">
-              {c}
+          {copy.showrooms.map((c) => (
+            <Link key={c.name} href="/stores">
+              {c.name}
             </Link>
           ))}
         </div>
         <div>
           <p className="label">Help</p>
-          <Link href="/help#delivery">Delivery across Oman</Link>
-          <Link href="/help#returns">Returns &amp; exchanges</Link>
-          <Link href="/help#payment">Cash on delivery</Link>
-          <Link href="/planner">Room planner</Link>
+          {copy.help.map((h) => (
+            <Link key={h.href + h.label} href={h.href}>
+              {h.label}
+            </Link>
+          ))}
         </div>
         <div>
           <p className="label">Contact</p>
@@ -60,8 +70,8 @@ export function Footer() {
         {COMPANY.isPlaceholder && <b> (Bracketed details are placeholders — the client must supply them.)</b>}
       </address>
       <div className="footer-fine">
-        <span>© 2026 {COMPANY.tradingName}. Prices in Omani rials, VAT included.</span>
-        <span>3D previews are rendered live in your browser.</span>
+        <span>{copy.finePrint}</span>
+        <span>{copy.finePrintRight}</span>
       </div>
     </footer>
   );

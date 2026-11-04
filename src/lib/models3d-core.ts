@@ -18,6 +18,29 @@ export type ModelState =
   | { status: "none" }
   | { status: "unavailable"; reason: string };
 
+/**
+ * Hosts our fal.ai API key may be sent to, and hosts a generated model may be downloaded
+ * from. The job and result URLs are read back out of the database and then fetched *with
+ * the key attached*, so without this check a tampered row -- or a compromised upstream
+ * response -- would send the key to an attacker's server. Defence in depth: today those
+ * values only ever come from fal's own response.
+ */
+const KEY_HOSTS = ["queue.fal.run", "fal.run", "rest.alpha.fal.ai"];
+const FILE_HOST_SUFFIXES = [".fal.media", ".fal.run", ".fal.ai"];
+
+function allowedUrl(raw: string | null, exact: string[], suffixes: string[] = []): string | null {
+  if (!raw) return null;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:") return null;
+  const ok = exact.includes(url.host) || suffixes.some((s) => url.host.endsWith(s));
+  return ok ? url.toString() : null;
+}
+
 export function createModels3d(pool: Pool) {
   const auth = () => ({ Authorization: `Key ${process.env.FAL_KEY}`, "Content-Type": "application/json" });
   const aiEnabled = () => !!process.env.FAL_KEY;
@@ -55,13 +78,23 @@ export function createModels3d(pool: Pool) {
 
   async function pollJob(productId: number, slug: string, row: Row): Promise<ModelState> {
     if (!aiEnabled() || !row.status_url || !row.response_url) return { status: "queued" };
-    const st = await fetch(row.status_url, { headers: auth() }).then((r) => r.json()).catch(() => null);
+
+    // Both URLs are validated before the API key is attached to a request for them.
+    const statusUrl = allowedUrl(row.status_url, KEY_HOSTS);
+    const responseUrl = allowedUrl(row.response_url, KEY_HOSTS);
+    if (!statusUrl || !responseUrl) return fail(productId, "job URL is not a recognised fal.ai address");
+
+    const st = await fetch(statusUrl, { headers: auth() }).then((r) => r.json()).catch(() => null);
     if (!st || st.status !== "COMPLETED") return { status: "queued" };
     if (st.error) return fail(productId, String(st.error));
-    const result = await fetch(row.response_url, { headers: auth() }).then((r) => r.json()).catch(() => null);
+    const result = await fetch(responseUrl, { headers: auth() }).then((r) => r.json()).catch(() => null);
     // Hunyuan 2.1 returns model_glb; the v2 family returns model_mesh
-    const glb: string | undefined = result?.model_glb?.url || result?.model_mesh?.url;
-    if (!glb) return fail(productId, "no 3D file in the AI response");
+    const glbRaw: string | undefined = result?.model_glb?.url || result?.model_mesh?.url;
+    if (!glbRaw) return fail(productId, "no 3D file in the AI response");
+    // No key is sent here, but an unchecked URL would still be a request our server makes
+    // to wherever the response said -- so the download host is allow-listed too.
+    const glb = allowedUrl(glbRaw, KEY_HOSTS, FILE_HOST_SUFFIXES);
+    if (!glb) return fail(productId, "3D file is not hosted at a recognised fal.ai address");
     const bin = await fetch(glb).then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null);
     if (!bin) return fail(productId, "could not download the 3D file");
     await mkdir(MODELS_DIR, { recursive: true });
@@ -92,12 +125,42 @@ export function createModels3d(pool: Pool) {
     if (current.status === "failed" && !retry) return current;
     if (!aiEnabled()) return { status: "unavailable", reason: "AI 3D is not configured (FAL_KEY)" };
 
-    const { rows: today } = await pool.query(
-      `SELECT count(*)::int AS n FROM product_models WHERE created_at > now() - interval '1 day'`,
-    );
-    if (today[0].n >= MAX_PER_DAY) return { status: "unavailable", reason: "daily 3D generation limit reached" };
-
     const image = p.image.includes("cdn.shopify.com") ? `${p.image.split("?")[0]}?width=1024` : p.image;
+
+    /*
+     * Claim the slot in the database BEFORE spending any money.
+     *
+     * The old order of operations was: check the daily cap, call fal (which bills us),
+     * then write the row that stops a second attempt. Between the check and the write
+     * there was no lock, so N simultaneous requests for one product all read "no model
+     * yet", all passed the cap check, and all billed a generation -- the cap never saw
+     * them. A burst of a few hundred unauthenticated POSTs could run up a large bill.
+     *
+     * One statement now does the cap check and the claim together. product_models has
+     * product_id as its PRIMARY KEY, so exactly one of a set of concurrent inserts can
+     * win; the losers fall into ON CONFLICT, whose WHERE is re-evaluated against the
+     * winner's freshly committed row, sees status 'queued' and claims nothing. The
+     * DO UPDATE branch therefore only ever fires for a genuine retry of a failed job.
+     */
+    const { rows: claimed } = await pool.query(
+      `INSERT INTO product_models (product_id, status, provider, model_id, source_image)
+       SELECT $1, 'queued', 'fal', $2, $3
+       WHERE (SELECT count(*) FROM product_models WHERE created_at > now() - interval '1 day') < $4
+       ON CONFLICT (product_id) DO UPDATE SET
+         status = 'queued', model_id = $2, source_image = $3, status_url = NULL,
+         response_url = NULL, error = NULL, file_name = NULL, created_at = now(), updated_at = now()
+       WHERE product_models.status = 'failed'
+       RETURNING product_id`,
+      [p.id, MODEL, image, MAX_PER_DAY],
+    );
+    if (!claimed[0]) {
+      // Either the daily cap is reached, or another request claimed this product first.
+      const now = await getModelState(slug);
+      return now.status === "none"
+        ? { status: "unavailable", reason: "daily 3D generation limit reached" }
+        : now;
+    }
+
     const res = await fetch(`${QUEUE}/${MODEL}`, {
       method: "POST",
       headers: auth(),
@@ -105,14 +168,21 @@ export function createModels3d(pool: Pool) {
     }).catch(() => null);
     const job = res?.ok ? await res.json() : null;
     if (!job?.status_url || !job?.response_url) {
+      // fal never accepted the job, so nothing was billed: release the claim so the
+      // product can be tried again later. Only our own un-started claim is removed --
+      // status_url IS NULL is what distinguishes it from a job already in flight.
+      await pool.query(
+        `DELETE FROM product_models
+          WHERE product_id = $1 AND status = 'queued' AND status_url IS NULL`,
+        [p.id],
+      );
       return { status: "unavailable", reason: `AI service error${res ? ` (${res.status})` : ""}` };
     }
+
     await pool.query(
-      `INSERT INTO product_models (product_id, status, provider, model_id, source_image, status_url, response_url)
-       VALUES ($1, 'queued', 'fal', $2, $3, $4, $5)
-       ON CONFLICT (product_id) DO UPDATE SET status = 'queued', model_id = $2, source_image = $3,
-         status_url = $4, response_url = $5, error = NULL, file_name = NULL, created_at = now(), updated_at = now()`,
-      [p.id, MODEL, image, job.status_url, job.response_url],
+      `UPDATE product_models SET status_url = $2, response_url = $3, updated_at = now()
+        WHERE product_id = $1`,
+      [p.id, job.status_url, job.response_url],
     );
     return { status: "queued" };
   }

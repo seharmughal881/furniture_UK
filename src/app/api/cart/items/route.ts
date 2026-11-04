@@ -2,6 +2,14 @@ import { ensureCartId, readCart } from "@/lib/cart";
 import { pool } from "@/lib/db";
 import { addToCartSchema, badRequest } from "@/lib/validation";
 
+/**
+ * A basket holds at most this many distinct lines. Quantity per line is already capped at
+ * 20 by the schema, but nothing limited the number of *lines*: repeating this request
+ * with different variant/material combinations grew one basket without bound, and
+ * readCart() joins every line on every basket read.
+ */
+const MAX_CART_LINES = 40;
+
 export async function POST(request: Request) {
   const parsed = addToCartSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return badRequest(parsed.error);
@@ -16,6 +24,22 @@ export async function POST(request: Request) {
   }
 
   const cartId = await ensureCartId();
+
+  // Checked before inserting rather than inside the statement, so a full basket gets a
+  // clear message instead of looking like an unknown product. The count is approximate
+  // (some of these items may merge into lines that already exist) which is fine: it only
+  // ever refuses earlier than strictly necessary, never later.
+  const { rows: lineCount } = await pool.query(
+    `SELECT count(*)::int AS n FROM cart_items WHERE cart_id = $1`,
+    [cartId],
+  );
+  if (lineCount[0].n + parsed.data.items.length > MAX_CART_LINES) {
+    return Response.json(
+      { error: "Your basket is full. Please check out or remove something first." },
+      { status: 409 },
+    );
+  }
+
   for (const it of parsed.data.items) {
     // the variant must be one the product actually has ("" = the product's only option)
     const res = await pool.query(

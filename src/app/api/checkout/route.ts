@@ -1,11 +1,30 @@
+import { headers } from "next/headers";
 import { clearCartCookie, currentCartId, readCart } from "@/lib/cart";
 import { pool } from "@/lib/db";
+import { bucketFor, callerIp, hit } from "@/lib/rate-limit";
 import { deliveryFee, vatIncluded } from "@/lib/types";
 import { badRequest, checkoutSchema } from "@/lib/validation";
+
+/**
+ * Generous on purpose: a real customer may legitimately retry a few times, and every
+ * order here is cash on delivery, so this limit exists to stop a script filling the
+ * order queue with junk -- not to police shoppers.
+ */
+const ORDERS_PER_HOUR = 10;
+const HOUR_SECONDS = 60 * 60;
 
 export async function POST(request: Request) {
   const parsed = checkoutSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return badRequest(parsed.error);
+
+  const quota = await hit(bucketFor("checkout", callerIp(await headers())), ORDERS_PER_HOUR, HOUR_SECONDS);
+  if (!quota.ok) {
+    return Response.json(
+      { error: "Several orders have already been placed from this connection. Please call us to continue." },
+      { status: 429, headers: { "Retry-After": String(quota.retryAfterSeconds) } },
+    );
+  }
+
   const cartId = await currentCartId();
   if (!cartId) return Response.json({ error: "Your basket is empty" }, { status: 400 });
 

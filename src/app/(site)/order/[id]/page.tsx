@@ -11,11 +11,33 @@ import { isUuid } from "@/lib/validation";
 
 export const metadata: Metadata = { title: "Thank you!", robots: { index: false } };
 
+/**
+ * Hides every digit but the last three, counting from the end of the whole string.
+ *
+ * Counted from the end rather than matched per group on purpose: phone numbers are stored
+ * exactly as they were typed, so "9123 4567", "+968 9399 3950" and "00968 91234567" all
+ * occur. A regex with a lookahead stops at each space and would leave most of the number
+ * readable.
+ */
+function maskPhone(phone: string): string {
+  let seen = 0;
+  return [...phone]
+    .reverse()
+    .map((ch) => {
+      if (!/\d/.test(ch)) return ch;
+      seen += 1;
+      return seen <= 3 ? ch : "•";
+    })
+    .reverse()
+    .join("");
+}
+
 async function ThankYou({ params }: { params: PageProps<"/order/[id]">["params"] }) {
   const { id } = await params;
   if (!isUuid(id)) notFound();
   const { rows } = await pool.query(
     `SELECT o.number, o.name, o.address, o.address2, o.city, o.county, o.country, o.phone, o.landmark,
+            o.created_at < now() - interval '7 days' AS "expired",
             o.delivery_fee_tbc AS "feeTbc", o.payment_method AS "payment", o.vat_cents AS "vat",
             o.subtotal_cents AS "subtotal", o.shipping_cents AS "shipping", o.total_cents AS "total",
             coalesce(json_agg(json_build_object('name', i.product_name, 'qty', i.quantity, 'price', i.unit_price_cents)
@@ -26,6 +48,20 @@ async function ThankYou({ params }: { params: PageProps<"/order/[id]">["params"]
   );
   const o = rows[0];
   if (!o) notFound();
+
+  /*
+   * This page's URL is its only credential: anyone holding the link sees the customer's
+   * full name, phone number and street address, and the link never stops working. The id
+   * is an unguessable gen_random_uuid() and the route is noindex, so the real exposure is
+   * a link that outlives its usefulness -- forwarded in a chat, left in the history of a
+   * shared or showroom computer.
+   *
+   * So the address and phone are shown for a week, which covers the delivery, and masked
+   * afterwards. The order number and contents stay visible, which is what somebody
+   * checking an old order actually needs.
+   */
+  const expired = Boolean(o.expired);
+  const maskedPhone = maskPhone(String(o.phone ?? ""));
   const items = o.items as { name: string; qty: number; price: number }[];
   const first = String(o.name).trim().split(/\s+/)[0];
   const number = `#${String(o.number).padStart(5, "0")}`;
@@ -50,7 +86,7 @@ async function ThankYou({ params }: { params: PageProps<"/order/[id]">["params"]
         </p>
         <p className="lead">
           Your new furniture is on its way to becoming part of your home. We&apos;ll call or WhatsApp you on{" "}
-          <b>{o.phone}</b> to confirm and book a delivery time.
+          <b>{expired ? maskedPhone : o.phone}</b> to confirm and book a delivery time.
         </p>
         <div className="thanks-actions">
           <Link href="/shop" className="btn solid thanks-back">
@@ -112,18 +148,26 @@ async function ThankYou({ params }: { params: PageProps<"/order/[id]">["params"]
           <p className="label">Order</p>
           <strong>{number}</strong>
           <p className="label">Delivering to</p>
-          <p>
-            {o.address}
-            {o.address2 && `, ${o.address2}`}
-            <br />
-            {o.landmark && (
-              <>
-                Near {o.landmark}
-                <br />
-              </>
-            )}
-            {o.city}, {o.county}
-          </p>
+          {expired ? (
+            <p>
+              {o.city}, {o.county}
+              <br />
+              <small>Full address hidden for privacy. Quote {number} if you need it.</small>
+            </p>
+          ) : (
+            <p>
+              {o.address}
+              {o.address2 && `, ${o.address2}`}
+              <br />
+              {o.landmark && (
+                <>
+                  Near {o.landmark}
+                  <br />
+                </>
+              )}
+              {o.city}, {o.county}
+            </p>
+          )}
           <p className="label">Payment</p>
           <p>{o.payment === "cod" ? "Cash on delivery" : o.payment}</p>
         </div>

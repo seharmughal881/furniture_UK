@@ -4,22 +4,33 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CATEGORIES } from "@/lib/catalog-data";
 import { COMPANY, whatsappLink } from "@/lib/company";
-import { DELIVERY, formatPrice, type ProductSummary } from "@/lib/types";
+import { formatPrice, type ProductSummary } from "@/lib/types";
 import { useCart } from "./commerce/CartProvider";
 import { WishlistCount } from "./commerce/WishlistView";
 import { shopifyImage } from "@/lib/images";
 
-// Mega-menu departments, each a group of catalogue categories.
-const DEPARTMENTS: { title: string; categories: string[] }[] = [
-  { title: "Living room", categories: ["sofas", "tables", "decor"] },
-  { title: "Bedroom", categories: ["bedroom-sets", "beds", "storage", "mattresses", "bedding"] },
-  { title: "Dining", categories: ["dining"] },
-  { title: "Lighting & electrical", categories: ["lighting", "switches", "sanitary"] },
-];
-
 const catName = (slug: string) => CATEGORIES.find((c) => c.slug === slug)?.name ?? slug;
 
-export function Nav({ products }: { products: ProductSummary[] }) {
+/**
+ * The editable parts of the header. Passed in rather than read here because this is a
+ * client component (it owns the menu, search and basket state) and getContent() is
+ * server-only -- the storefront layout reads it and hands it down.
+ */
+export type NavCopy = {
+  announcement: { enabled: boolean; message: string; extra: string; messageAr: string };
+  links: { label: string; href: string }[];
+  departments: { title: string; categories: string }[];
+};
+
+export function Nav({ products, copy }: { products: ProductSummary[]; copy: NavCopy }) {
+  // "sofas, tables, decor" as typed in the back office -> the category slugs to list.
+  const departments = copy.departments.map((d) => ({
+    title: d.title,
+    categories: d.categories
+      .split(",")
+      .map((c) => c.trim())
+      .filter(Boolean),
+  }));
   const { cart, setOpen } = useCart();
   const [menu, setMenu] = useState(false);
   const [mega, setMega] = useState(false);
@@ -60,12 +71,14 @@ export function Nav({ products }: { products: ProductSummary[] }) {
       <a href="#main" className="skip-link">
         Skip to content
       </a>
-      <div className="announce">
-        <span>
-          Free delivery on orders over {formatPrice(DELIVERY.freeOverCents).replace(".000", "")}
-          <span className="more"> · Delivered in {DELIVERY.days} across Oman · Order on WhatsApp</span>
-        </span>
-      </div>
+      {copy.announcement.enabled && (
+        <div className="announce">
+          <span>
+            {copy.announcement.message}
+            {copy.announcement.extra && <span className="more">{copy.announcement.extra}</span>}
+          </span>
+        </div>
+      )}
       <header className="nav" onMouseLeave={() => setMega(false)}>
         <button className="icon-btn nav-burger" aria-label="Open menu" aria-expanded={menu} onClick={() => setMenu(true)}>
           <span />
@@ -85,15 +98,11 @@ export function Nav({ products }: { products: ProductSummary[] }) {
           >
             Shop
           </button>
-          <Link href="/planner" className="nav-link">
-            Room planner
-          </Link>
-          <Link href="/stores" className="nav-link">
-            Showrooms
-          </Link>
-          <Link href="/help" className="nav-link">
-            Delivery &amp; returns
-          </Link>
+          {copy.links.map((l) => (
+            <Link key={l.href + l.label} href={l.href} className="nav-link">
+              {l.label}
+            </Link>
+          ))}
         </nav>
         <div className="nav-actions">
           <button className="icon-btn" aria-label="Search" onClick={() => setSearch(true)}>
@@ -116,7 +125,7 @@ export function Nav({ products }: { products: ProductSummary[] }) {
           onClick={closeOnLink(() => setMega(false))}
         >
           <div className="mega-cols">
-            {DEPARTMENTS.map((d) => (
+            {departments.map((d) => (
               <div key={d.title}>
                 <p className="label mega-title">{d.title}</p>
                 {d.categories.map((c) => (

@@ -20,6 +20,9 @@ const smooth = (a: number, b: number, x: number) => {
 const A_END = 0.3; // assembly
 const B_END = 0.56; // material lab
 const hourAt = (p: number) => 13 + 9 * smooth(0.62, 0.97, p);
+// The story opens on the finished sofa: scrolling covers START..1 of the timeline (the wireframe
+// build-up before START is skipped). Raise START to 0 to bring the build-up back.
+const START: number = A_END;
 
 type Shot = { p: number; pos: [number, number, number]; target: [number, number, number] };
 const SHOTS: Shot[] = [
@@ -123,7 +126,7 @@ export function HeroStory({ materials, photo }: { materials: Material[]; photo?:
 
   const section = useRef<HTMLElement>(null);
   const clock = useRef<HTMLDivElement>(null);
-  const progress = useRef(0);
+  const progress = useRef(START);
   const [chapter, setChapter] = useState(0);
 
   useEffect(() => {
@@ -147,7 +150,7 @@ export function HeroStory({ materials, photo }: { materials: Material[]; photo?:
       if (!el) return;
       const st = el;
       const rect = el.getBoundingClientRect();
-      const target = clamp01(-rect.top / (rect.height - window.innerHeight));
+      const target = START + (1 - START) * clamp01(-rect.top / (rect.height - window.innerHeight));
       const p = touch ? progress.current + (target - progress.current) * (1 - Math.exp(-dt * 7)) : target;
       progress.current = p;
 
@@ -163,12 +166,13 @@ export function HeroStory({ materials, photo }: { materials: Material[]; photo?:
       st.style.setProperty("--sky-bottom", `#${bottom.getHexString()}`);
       st.style.setProperty("--stage-ink", `#${ink.getHexString()}`);
       st.style.setProperty("--grid-opacity", String(1 - build));
-      st.style.setProperty("--hero-photo", String(1 - smooth(0.004, 0.06, p)));
+      const raw = (p - START) / (1 - START); // how far through the section the visitor has scrolled
+      st.style.setProperty("--hero-photo", String(1 - smooth(0.004, 0.06, raw)));
       st.style.setProperty("--accent-live", night > 0.5 ? "#d9b77a" : "#c8102e"); // gold under lamplight
       st.style.setProperty("--clock-ink", night > 0.5 ? "#d9b77a" : "inherit");
       if (clock.current) clock.current.textContent = formatHour(hourAt(p));
 
-      const c = p < A_END - 0.04 ? 0 : p < B_END ? 1 : 2;
+      const c = raw < 0.07 ? 0 : p < B_END ? 1 : 2;
       if (c !== lastChapter) {
         lastChapter = c;
         setChapter(c);
@@ -193,7 +197,7 @@ export function HeroStory({ materials, photo }: { materials: Material[]; photo?:
           <HeroScene progress={progress} palette={palette} />
         </View>
 
-        <div className="blueprint-spec" style={{ opacity: chapter === 0 ? 1 : 0 }} aria-hidden>
+        <div className="blueprint-spec" style={{ opacity: chapter === 0 && START === 0 ? 1 : 0 }} aria-hidden>
           3-SEAT SOFA / LIVE 3D
           <br />
           W 2100 · D 900 · H 820 mm
@@ -202,7 +206,7 @@ export function HeroStory({ materials, photo }: { materials: Material[]; photo?:
         </div>
 
         <div className="progress-rail above" aria-hidden>
-          {["01 Assembly", "02 Material", "03 Daylight"].map((t, i) => (
+          {["01 The sofa", "02 Material", "03 Daylight"].map((t, i) => (
             <span key={t} className={chapter === i ? "on" : ""}>
               {t}
             </span>
@@ -233,8 +237,8 @@ export function HeroStory({ materials, photo }: { materials: Material[]; photo?:
             ))}
           </h1>
           <p>
-            Oman&apos;s first furniture store you can explore in 3D. Scroll to watch a sofa build itself, then try
-            fabrics and plan your room before you order.
+            Oman&apos;s first furniture store you can explore in 3D. Scroll to try fabrics, see it from midday to
+            lamplight, then plan your room before you order.
           </p>
           <div className="hero-ctas">
             <Link href="/shop" className="btn solid">
@@ -303,7 +307,7 @@ export function HeroStory({ materials, photo }: { materials: Material[]; photo?:
         </div>
 
         <div className="scroll-cue" style={{ opacity: chapter === 0 ? 1 : 0 }}>
-          Scroll to build <i />
+          Scroll to explore <i />
         </div>
       </div>
     </section>

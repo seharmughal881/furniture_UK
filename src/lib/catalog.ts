@@ -7,8 +7,13 @@ const PRODUCT_COLUMNS = `id, slug, name, kind, tagline, description, price_cents
   lead_time_weeks AS "leadTimeWeeks", width_cm AS "widthCm", depth_cm AS "depthCm", height_cm AS "heightCm",
   category, rooms, details, care, name_ar AS "nameAr", images, compare_at_cents AS "compareAtCents",
   in_stock AS "inStock", featured, colour, sku, variants,
-  (SELECT round(avg(rating), 1)::float FROM reviews r WHERE r.product_id = products.id) AS rating,
-  (SELECT count(*)::int FROM reviews r WHERE r.product_id = products.id) AS "reviewCount"`;
+  -- Only approved reviews count towards the shown rating. Without this filter an
+  -- unmoderated submission would move the star rating (and the aggregateRating that
+  -- search engines read) the instant a stranger posted it.
+  (SELECT round(avg(rating), 1)::float FROM reviews r
+    WHERE r.product_id = products.id AND r.status = 'approved') AS rating,
+  (SELECT count(*)::int FROM reviews r
+    WHERE r.product_id = products.id AND r.status = 'approved') AS "reviewCount"`;
 
 export async function getProducts(): Promise<Product[]> {
   "use cache";
@@ -67,7 +72,9 @@ export async function getReviews(productId: number): Promise<Review[]> {
   cacheTag("reviews");
   const { rows } = await pool.query(
     `SELECT id, author, rating, title, body, is_demo AS "isDemo", created_at::text AS "createdAt"
-     FROM reviews WHERE product_id = $1 ORDER BY is_demo, created_at DESC LIMIT 50`,
+     FROM reviews
+     WHERE product_id = $1 AND status = 'approved'
+     ORDER BY is_demo, created_at DESC LIMIT 50`,
     [productId],
   );
   return rows;

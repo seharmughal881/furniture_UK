@@ -1,0 +1,1034 @@
+/* Back-office styles.
+ *
+ * Separate from src/app/globals.css on purpose. That file is 6,400+ lines of storefront
+ * rules loaded by every shopper; admin rules there would be downloaded by customers who
+ * can never see them, and its .btn/.label/.row classes mean something else here. Every
+ * rule below is scoped under .adm, so the two can never collide.
+ *
+ * Only the font variables are shared -- they are declared on <html> by the root layout.
+ */
+
+.adm {
+  --adm-ink: #17150f;
+  --adm-muted: #6a6558;
+  --adm-line: #e2ded2;
+  --adm-paper: #fbfaf7;
+  --adm-card: #ffffff;
+  --adm-bar: #17150f;
+  --adm-accent: #c8102e;
+  --adm-accent-soft: #fdeaed;
+  --adm-gold: #b08d57;
+  --adm-radius: 10px;
+
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  background: var(--adm-paper);
+  color: var(--adm-ink);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.adm *,
+.adm *::before,
+.adm *::after {
+  box-sizing: border-box;
+}
+
+.adm h1,
+.adm h2,
+.adm h3 {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.adm h1 {
+  font-size: 24px;
+}
+.adm h2 {
+  font-size: 17px;
+}
+.adm p {
+  margin: 0;
+}
+.adm a {
+  color: inherit;
+  text-decoration: none;
+}
+.adm a:hover {
+  text-decoration: underline;
+}
+
+/* ---------------------------------------------------------------- top bar */
+.adm-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 56px;
+  padding: 0 20px;
+  background: var(--adm-bar);
+  color: #fff;
+}
+.adm-brand {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.adm-brand span {
+  margin-left: 8px;
+  padding-left: 9px;
+  border-left: 1px solid rgb(255 255 255 / 0.25);
+  color: var(--adm-gold);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.adm-brand:hover {
+  text-decoration: none;
+}
+.adm-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.adm-nav {
+  display: flex;
+  gap: 14px;
+  font-size: 14px;
+}
+.adm-who {
+  color: rgb(255 255 255 / 0.65);
+  font-size: 13px;
+}
+
+/* ---------------------------------------------------------------- layout */
+.adm-main {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 28px 20px 72px;
+}
+.adm-loading {
+  padding: 48px 0;
+  color: var(--adm-muted);
+}
+.adm-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.adm-sub {
+  color: var(--adm-muted);
+  font-size: 14px;
+  margin-top: 4px;
+}
+.adm-card {
+  background: var(--adm-card);
+  border: 1px solid var(--adm-line);
+  border-radius: var(--adm-radius);
+}
+.adm-pad {
+  padding: 18px 20px;
+}
+
+/* ---------------------------------------------------------------- buttons */
+.adm-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border: 1px solid var(--adm-line);
+  border-radius: 7px;
+  background: var(--adm-card);
+  color: var(--adm-ink);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.adm-btn:hover {
+  background: #f3f1ea;
+  text-decoration: none;
+}
+.adm-btn-primary {
+  background: var(--adm-ink);
+  border-color: var(--adm-ink);
+  color: #fff;
+}
+.adm-btn-primary:hover {
+  background: #2c281d;
+}
+.adm-btn-danger {
+  color: var(--adm-accent);
+  border-color: #eccfd4;
+  background: var(--adm-accent-soft);
+}
+.adm-btn-danger:hover {
+  background: #fbdde2;
+}
+.adm-btn-quiet {
+  background: transparent;
+  border-color: rgb(255 255 255 / 0.3);
+  color: #fff;
+  padding: 6px 11px;
+  font-size: 13px;
+}
+.adm-btn-quiet:hover {
+  background: rgb(255 255 255 / 0.12);
+}
+.adm-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---------------------------------------------------------------- filters */
+.adm-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.adm-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.adm-chip {
+  padding: 6px 12px;
+  border: 1px solid var(--adm-line);
+  border-radius: 999px;
+  background: var(--adm-card);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.adm-chip:hover {
+  text-decoration: none;
+  background: #f3f1ea;
+}
+.adm-chip.on {
+  background: var(--adm-ink);
+  border-color: var(--adm-ink);
+  color: #fff;
+}
+.adm-chip small {
+  opacity: 0.6;
+  margin-left: 5px;
+}
+.adm-search {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+.adm-search input,
+.adm-field input,
+.adm-field select,
+.adm-field textarea {
+  padding: 8px 11px;
+  border: 1px solid var(--adm-line);
+  border-radius: 7px;
+  background: var(--adm-card);
+  color: var(--adm-ink);
+  font: inherit;
+  font-size: 14px;
+}
+.adm-search input {
+  min-width: 230px;
+}
+.adm-search input:focus-visible,
+.adm-field input:focus-visible,
+.adm-field textarea:focus-visible {
+  outline: 2px solid var(--adm-gold);
+  outline-offset: 1px;
+}
+
+/* ---------------------------------------------------------------- table */
+.adm-table-wrap {
+  overflow-x: auto;
+  background: var(--adm-card);
+  border: 1px solid var(--adm-line);
+  border-radius: var(--adm-radius);
+}
+.adm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.adm-table th,
+.adm-table td {
+  padding: 11px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--adm-line);
+  white-space: nowrap;
+}
+.adm-table th {
+  background: #f7f5f0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--adm-muted);
+}
+.adm-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.adm-table tbody tr:hover {
+  background: #faf8f4;
+}
+.adm-table .adm-num {
+  font-family: var(--font-mono), monospace;
+  font-variant-numeric: tabular-nums;
+}
+.adm-table .adm-money {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.adm-row-link {
+  font-weight: 600;
+}
+.adm-empty {
+  padding: 56px 20px;
+  text-align: center;
+  color: var(--adm-muted);
+}
+
+/* ---------------------------------------------------------------- badges */
+.adm-badge {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.adm-badge[data-status="placed"] {
+  background: #fff3d6;
+  color: #7a5600;
+}
+.adm-badge[data-status="confirmed"] {
+  background: #dbeafe;
+  color: #1e40af;
+}
+.adm-badge[data-status="dispatched"] {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+.adm-badge[data-status="delivered"] {
+  background: #d9f2e3;
+  color: #14593a;
+}
+.adm-badge[data-status="cancelled"] {
+  background: #eeece6;
+  color: #5c574c;
+}
+.adm-badge[data-status="returned"] {
+  background: var(--adm-accent-soft);
+  color: #8c1022;
+}
+.adm-flag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--adm-accent-soft);
+  color: #8c1022;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------- notices */
+.adm-notice {
+  padding: 11px 14px;
+  border-radius: 8px;
+  border: 1px solid #eccfd4;
+  background: var(--adm-accent-soft);
+  color: #8c1022;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+.adm-tbc {
+  padding: 11px 14px;
+  border-radius: 8px;
+  border: 1px solid #f0dcb4;
+  background: #fff8e8;
+  color: #7a5600;
+  font-size: 14px;
+}
+
+/* ---------------------------------------------------------------- detail */
+.adm-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.adm-stack {
+  display: grid;
+  gap: 20px;
+}
+.adm-card h2 {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--adm-line);
+}
+.adm-dl {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+}
+.adm-dl > div {
+  display: contents;
+}
+.adm-dl dt {
+  padding: 9px 20px;
+  color: var(--adm-muted);
+  font-size: 13px;
+  border-bottom: 1px solid #f1efe8;
+}
+.adm-dl dd {
+  margin: 0;
+  padding: 9px 20px;
+  border-bottom: 1px solid #f1efe8;
+}
+.adm-dl > div:last-child dt,
+.adm-dl > div:last-child dd {
+  border-bottom: 0;
+}
+.adm-totals {
+  padding: 6px 20px 16px;
+}
+.adm-total-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 0;
+  font-variant-numeric: tabular-nums;
+}
+.adm-total-row.grand {
+  margin-top: 6px;
+  padding-top: 11px;
+  border-top: 1px solid var(--adm-line);
+  font-size: 17px;
+  font-weight: 600;
+}
+.adm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 16px 20px;
+}
+.adm-actions form {
+  display: contents;
+}
+.adm-field {
+  display: grid;
+  gap: 6px;
+  padding: 0 20px 16px;
+}
+.adm-field label {
+  font-size: 13px;
+  color: var(--adm-muted);
+}
+.adm-field textarea {
+  resize: vertical;
+  min-height: 70px;
+}
+.adm-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 8px 20px 18px;
+  display: grid;
+  gap: 14px;
+}
+.adm-timeline li {
+  padding-left: 14px;
+  border-left: 2px solid var(--adm-line);
+}
+.adm-timeline time {
+  display: block;
+  color: var(--adm-muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+.adm-timeline .adm-note {
+  margin-top: 5px;
+  white-space: pre-wrap;
+}
+.adm-pager {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 18px;
+  font-size: 14px;
+  color: var(--adm-muted);
+}
+
+/* ---------------------------------------------------------------- login */
+.adm-login {
+  max-width: 380px;
+  margin: 8vh auto;
+}
+.adm-login h1 {
+  margin-bottom: 6px;
+}
+.adm-login form {
+  display: grid;
+  gap: 14px;
+  margin-top: 20px;
+}
+.adm-login label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--adm-muted);
+}
+.adm-login input {
+  padding: 10px 12px;
+  border: 1px solid var(--adm-line);
+  border-radius: 7px;
+  font: inherit;
+  font-size: 15px;
+}
+.adm-login input:focus-visible {
+  outline: 2px solid var(--adm-gold);
+  outline-offset: 1px;
+}
+
+@media (max-width: 900px) {
+  .adm-detail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .adm-search {
+    margin-left: 0;
+    width: 100%;
+  }
+  .adm-search input {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+/* ---------------------------------------------------------------- print */
+/* The delivery note. Two copies per A4 sheet -- one for the customer, one the driver
+ * brings back signed -- with the admin chrome hidden. */
+.adm-note {
+  max-width: 760px;
+  margin: 0 auto;
+}
+.adm-note-sheet {
+  background: #fff;
+  border: 1px solid var(--adm-line);
+  border-radius: var(--adm-radius);
+  padding: 22px 26px;
+  margin-bottom: 16px;
+}
+.adm-note-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 2px solid var(--adm-ink);
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+}
+.adm-note-collect {
+  margin: 14px 0;
+  padding: 12px 16px;
+  border: 2px solid var(--adm-ink);
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+}
+.adm-note-collect strong {
+  font-size: 26px;
+  font-variant-numeric: tabular-nums;
+}
+.adm-note-sign {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 22px;
+}
+.adm-note-sign div {
+  border-top: 1px solid var(--adm-ink);
+  padding-top: 6px;
+  font-size: 12px;
+  color: var(--adm-muted);
+}
+.adm-cut {
+  border: 0;
+  border-top: 1px dashed #b9b4a6;
+  margin: 20px 0;
+}
+
+@media print {
+  .adm {
+    background: #fff;
+  }
+  .adm-bar,
+  .adm-no-print {
+    display: none !important;
+  }
+  .adm-main {
+    padding: 0;
+    max-width: none;
+  }
+  .adm-note-sheet {
+    border: 0;
+    border-radius: 0;
+    padding: 0 0 10mm;
+    break-inside: avoid;
+  }
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+}
+
+/* ---------------------------------------------------------------- dashboard
+ * Stat tiles, the two-column band and the ranked lists on /admin. Some tiles are
+ * links to a filtered order list and some are plain figures, so the rules below
+ * style .adm-stat for both <a> and <div> rather than assuming one element.
+ */
+.adm-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.adm-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 16px;
+  background: var(--adm-card);
+  border: 1px solid var(--adm-line);
+  border-radius: var(--adm-radius);
+}
+a.adm-stat:hover {
+  border-color: var(--adm-ink);
+  text-decoration: none;
+}
+.adm-stat-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--adm-muted);
+}
+.adm-stat-value {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+/* Prices are longer than counts, so they get a size that still fits the tile. */
+.adm-stat-money {
+  font-size: 21px;
+}
+.adm-stat-note {
+  font-size: 12px;
+  color: var(--adm-muted);
+}
+/* A tile that wants attention: something is waiting for staff to act on it. */
+.adm-stat[data-tone="urgent"] {
+  border-color: var(--adm-accent);
+  background: var(--adm-accent-soft);
+}
+.adm-stat[data-tone="urgent"] .adm-stat-value {
+  color: var(--adm-accent);
+}
+.adm-stat[data-tone="warn"] {
+  border-color: var(--adm-gold);
+}
+
+.adm-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .adm-grid-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Ranked lists: best sellers and out-of-stock. */
+.adm-rank {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.adm-rank > li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--adm-line);
+}
+.adm-rank > li:last-child {
+  border-bottom: 0;
+}
+.adm-rank-no {
+  flex: none;
+  width: 18px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--adm-muted);
+  font-variant-numeric: tabular-nums;
+}
+.adm-rank-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+}
+.adm-rank-name:hover {
+  text-decoration: underline;
+}
+.adm-rank-units {
+  flex: none;
+  font-size: 13px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------- products
+ * The product list's row controls and the add/edit form. The form is a stack of
+ * .adm-card sections; .adm-field-grid lays each one out in columns that collapse to a
+ * single column on a phone, because the owner is expected to use this on one.
+ */
+.adm-row-thumb {
+  display: block;
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--adm-paper);
+  border: 1px solid var(--adm-line);
+}
+.adm-row-thumb-empty::after {
+  content: "—";
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--adm-muted);
+}
+
+/* An inline switch posted as its own one-field form, so it works without JavaScript. */
+.adm-toggle {
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--adm-line);
+  background: var(--adm-paper);
+  color: var(--adm-muted);
+  cursor: pointer;
+}
+.adm-toggle:hover {
+  border-color: var(--adm-ink);
+  color: var(--adm-ink);
+}
+.adm-toggle.on {
+  background: #edf6ee;
+  border-color: #8fbf98;
+  color: #2f6b3a;
+  font-weight: 600;
+}
+
+/* ---- the form ---- */
+.adm-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.adm-field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+@media (max-width: 620px) {
+  .adm-field-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.adm-form .adm-field > span {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--adm-muted);
+}
+.adm-form input[type="text"],
+.adm-form input:not([type]),
+.adm-form select,
+.adm-form textarea {
+  width: 100%;
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--adm-line);
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+}
+.adm-form textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+.adm-form input:focus-visible,
+.adm-form select:focus-visible,
+.adm-form textarea:focus-visible {
+  outline: 2px solid var(--adm-ink);
+  outline-offset: 1px;
+}
+/* A read-only price for staff: visibly not editable, not merely ignored. */
+.adm-form input[readonly] {
+  background: var(--adm-paper);
+  color: var(--adm-muted);
+  cursor: not-allowed;
+}
+.adm-field.invalid input,
+.adm-field.invalid select,
+.adm-field.invalid textarea {
+  border-color: var(--adm-accent);
+  background: var(--adm-accent-soft);
+}
+.adm-err {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-style: normal;
+  color: var(--adm-accent);
+}
+.adm-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 14px;
+}
+.adm-check input {
+  width: auto;
+}
+.adm-save-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding: 12px 0;
+  background: linear-gradient(to top, var(--adm-paper) 70%, transparent);
+}
+
+/* ---- photos ---- */
+.adm-thumbs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+.adm-thumbs > li {
+  position: relative;
+  border: 1px solid var(--adm-line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--adm-paper);
+}
+.adm-thumbs img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+.adm-thumb-main {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--adm-bar);
+  color: #fff;
+}
+.adm-thumb-tools {
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  border-top: 1px solid var(--adm-line);
+  background: #fff;
+}
+.adm-thumb-tools button {
+  font: inherit;
+  font-size: 12px;
+  flex: none;
+  padding: 2px 7px;
+  border: 1px solid var(--adm-line);
+  border-radius: 6px;
+  background: var(--adm-paper);
+  cursor: pointer;
+}
+.adm-thumb-tools button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.adm-thumb-remove {
+  flex: 1 !important;
+  color: var(--adm-accent);
+}
+.adm-image-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.adm-image-add input[type="text"] {
+  flex: 1;
+  min-width: 200px;
+}
+/* The real file input is hidden; its <label class="adm-btn"> is the visible control. */
+.adm-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.adm-file:focus-visible + label {
+  outline: 2px solid var(--adm-ink);
+  outline-offset: 1px;
+}
+
+/* ---- options ---- */
+.adm-variant-table input:not([type="checkbox"]) {
+  min-width: 90px;
+}
+.adm-variants {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+/* ---- destructive confirmation, shown inline instead of a blocking dialog ---- */
+.adm-confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--adm-accent);
+  border-radius: var(--adm-radius);
+  background: var(--adm-accent-soft);
+}
+.adm-confirm strong {
+  font-size: 13px;
+}
+
+/* ---- audit history ---- */
+.adm-changes {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  font-size: 13px;
+  color: var(--adm-muted);
+}
+.adm-changes b {
+  color: var(--adm-ink);
+}
+
+/* ---------------------------------------------------------------- moderation
+ * Review and enquiry cards. These are read-then-decide screens rather than tables:
+ * the owner needs to read the whole text before judging it, so each item is a card
+ * with its actions underneath, not a row that truncates.
+ */
+.adm-review-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.adm-review-head h2 {
+  margin: 4px 0 2px;
+}
+.adm-review-body {
+  margin-bottom: 12px;
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+.adm-review .adm-actions,
+.adm-inquiry-form .adm-actions {
+  flex-wrap: wrap;
+}
+.adm-inquiry-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 12px;
+  margin-top: 12px;
+  border-top: 1px solid var(--adm-line);
+}
+.adm-inquiry-form .adm-field {
+  max-width: 460px;
+}
+
+/* ---------------------------------------------------------------- content editor
+ * Rows of repeatable items (promises, steps, map pins, menu groups). Each row is a
+ * bordered block rather than a table row, because a row can hold five or six fields
+ * and a table would be unreadable on a phone.
+ */
+.adm-list-rows {
+  margin: 10px 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.adm-list-rows > li {
+  padding: 12px;
+  border: 1px solid var(--adm-line);
+  border-radius: var(--adm-radius);
+  background: var(--adm-paper);
+}
+.adm-list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.adm-list-head strong {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--adm-muted);
+}
+.adm-list-tools {
+  display: flex;
+  gap: 4px;
+}
+.adm-list-tools button {
+  font: inherit;
+  font-size: 12px;
+  padding: 2px 8px;
+  border: 1px solid var(--adm-line);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+.adm-list-tools button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.adm-list-rows input,
+.adm-list-rows select,
+.adm-list-rows textarea {
+  background: #fff;
+}

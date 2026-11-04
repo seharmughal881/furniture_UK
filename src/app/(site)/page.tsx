@@ -8,11 +8,19 @@ import { CategoryRail, HowToOrder, ShowroomMap, TrustStrip } from "@/components/
 import { RecentlyViewed } from "@/components/product/RecentlyViewed";
 import { ProductGrid } from "@/components/shop/ProductCard";
 import { getMaterials, getProductIndex } from "@/lib/catalog";
+import { getContent } from "@/lib/content/read";
+import type { PlannerTeaserCopy } from "@/components/home/PlannerTeaser";
 import { shopifyImage } from "@/lib/images";
 import { DELIVERY, savingPercent } from "@/lib/types";
 
 export default async function Home() {
-  const [products, materials] = await Promise.all([getProductIndex(), getMaterials()]);
+  // The planner teaser is a client component (it drives a WebGL view), so its wording is
+  // read here and passed down rather than fetched inside it.
+  const [products, materials, teaser] = await Promise.all([
+    getProductIndex(),
+    getMaterials(),
+    getContent<PlannerTeaserCopy & { enabled: boolean }>("planner_teaser"),
+  ]);
   // phones open on a real room photo: the Atlas sofa set lounge
   const heroPhoto = (products.find((p) => p.slug === "atlas-sofa-set-1") ?? products.find((p) => p.category === "sofas"))?.image;
   const whyPhoto = (products.find((p) => p.slug === "woodi-sofa-set") ?? products.find((p) => p.category === "sofas"))?.image;
@@ -116,7 +124,7 @@ export default async function Home() {
 
       <RecentlyViewed index={products} />
       <ShowroomMap />
-      <PlannerTeaser />
+      {teaser.enabled && <PlannerTeaser copy={teaser} />}
       <Footer />
     </main>
   );

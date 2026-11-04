@@ -1,5 +1,8 @@
 "use client";
 
+// Outside the (site) group, so it imports the stylesheet itself (see not-found.tsx).
+import "./globals.css";
+
 export default function Error({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
     <main className="section page empty">

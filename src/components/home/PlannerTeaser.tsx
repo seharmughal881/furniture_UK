@@ -36,7 +36,21 @@ function MiniRoom() {
   );
 }
 
-export function PlannerTeaser() {
+export type PlannerTeaserCopy = {
+  label: string;
+  heading: string;
+  emphasis: string;
+  headingEnd: string;
+  body: string;
+  buttonLabel: string;
+};
+
+/**
+ * Wording arrives as a prop rather than being read here: this is a client component (it
+ * drives a WebGL view), and getContent() is server-only. The home page reads the content
+ * and passes it down.
+ */
+export function PlannerTeaser({ copy }: { copy: PlannerTeaserCopy }) {
   const ref = useRef<HTMLDivElement>(null);
   const [seen, setSeen] = useState(false);
   useEffect(() => {
@@ -48,17 +62,14 @@ export function PlannerTeaser() {
     <div className="teaser">
       <div className="teaser-copy above">
         <p className="label" style={{ color: "#9a9a9a" }}>
-          Room planner
+          {copy.label}
         </p>
         <h2>
-          Plan your room. <em style={{ color: "#ff4d5a" }}>Save it.</em> Order it.
+          {copy.heading} <em style={{ color: "#ff4d5a" }}>{copy.emphasis}</em> {copy.headingEnd}
         </h2>
-        <p>
-          Drag our real sofa sets, bedroom sets and dining tables onto a floor plan, turn them, and watch the light
-          change from afternoon to night. Share the layout with family, or add the whole room to your basket.
-        </p>
+        <p>{copy.body}</p>
         <Link href="/planner" className="btn light">
-          Open the planner →
+          {copy.buttonLabel}
         </Link>
       </div>
       <div className="teaser-view" ref={ref}>

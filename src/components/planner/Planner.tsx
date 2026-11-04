@@ -39,6 +39,43 @@ const GROUPS = [
 ];
 const groupOf = (p: ProductSummary) => (["living", "bedroom", "dining"].includes(p.rooms[0]) ? p.rooms[0] : "other");
 
+/**
+ * Edit tokens for rooms saved from this browser.
+ *
+ * A room's id is its share link, so the id cannot also be the permission to change it.
+ * The server returns a secret token once, when the room is first saved; keeping it here
+ * is what lets this browser — and only this browser — go on editing that room. Someone
+ * opening a shared link has no token, so their save creates a copy instead.
+ *
+ * localStorage, not a cookie: it never needs to reach the server except as this one
+ * header, and every read is guarded because it throws in private windows and when site
+ * data is blocked.
+ */
+const TOKEN_KEY = "atelier_room_tokens";
+
+function readEditTokens(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(TOKEN_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+const editTokenFor = (roomId: string): string | null => readEditTokens()[roomId] ?? null;
+
+function rememberEditToken(roomId: string, token: string): void {
+  try {
+    // Keep the most recent few only, so this never grows without bound.
+    const all = { ...readEditTokens(), [roomId]: token };
+    const trimmed = Object.fromEntries(Object.entries(all).slice(-20));
+    localStorage.setItem(TOKEN_KEY, JSON.stringify(trimmed));
+  } catch {
+    // Saving still worked; this browser just will not be able to edit in place later.
+  }
+}
+
 const uid = () => Math.random().toString(36).slice(2, 10);
 const snap = (v: number) => Math.round(v / SNAP) * SNAP;
 const clampX = (v: number) => Math.min(ROOM.w / 2 - 0.2, Math.max(-ROOM.w / 2 + 0.2, v));
@@ -420,6 +457,11 @@ export function Planner({ products }: { products: ProductSummary[] }) {
   const [mode, setMode] = useState<DisplayMode>("simple");
   const [name, setName] = useState(() => (PRESETS[startPreset] ?? PRESETS.living).name);
   const [roomId, setRoomId] = useState<string | null>(null);
+  // Whether this browser holds the edit token for the loaded room, which decides if
+  // saving updates it or saves a copy. Set in an effect, never read during render:
+  // localStorage does not exist on the server, so reading it inline would make the
+  // button's label differ between the server and client renders.
+  const [canEditRoom, setCanEditRoom] = useState(false);
   const [status, setStatus] = useState("");
   const [loadFailed, setLoadFailed] = useState<string | null>(null);
   const [track, setTrack] = useState<HTMLDivElement | null>(null);
@@ -447,6 +489,8 @@ export function Planner({ products }: { products: ProductSummary[] }) {
         if (room.style?.mode) setMode(room.style.mode === "ai" && !AI_MODELS ? "simple" : room.style.mode);
         else if (typeof room.style?.photos === "boolean") setMode(room.style.photos ? "photo" : "simple");
         setRoomId(room.id);
+        // Someone opening a shared link holds no token, so their save becomes a copy.
+        setCanEditRoom(Boolean(editTokenFor(room.id)));
       })
       .catch(() => !cancelled && setLoadFailed(roomParam));
     return () => {
@@ -566,14 +610,30 @@ export function Planner({ products }: { products: ProductSummary[] }) {
   async function save() {
     setStatus("Saving…");
     const body = JSON.stringify({ name, layout: items, style: { wall, floor, mode } });
-    const res = await fetch(roomId ? `/api/rooms/${roomId}` : "/api/rooms", {
-      method: roomId ? "PUT" : "POST",
-      headers: { "Content-Type": "application/json" },
+
+    // The edit token proves this browser is the one that saved the room. Only rooms we
+    // hold a token for are updated in place; anything else (someone else's shared link,
+    // or a room saved before tokens existed) is saved as a new copy of our own, which is
+    // why the method is chosen by the token and not just by having an id.
+    const token = roomId ? editTokenFor(roomId) : null;
+    const updating = Boolean(roomId && token);
+
+    const res = await fetch(updating ? `/api/rooms/${roomId}` : "/api/rooms", {
+      method: updating ? "PUT" : "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(updating && token ? { "x-room-token": token } : {}),
+      },
       body,
     }).catch(() => null);
-    if (!res?.ok) return setStatus("Couldn't save. Please try again.");
-    const { room } = await res.json();
+    if (!res?.ok) {
+      const problem = await res?.json().catch(() => null);
+      return setStatus(problem?.error ?? "Couldn't save. Please try again.");
+    }
+    const { room, editToken } = await res.json();
+    if (editToken) rememberEditToken(room.id, editToken);
     setRoomId(room.id);
+    setCanEditRoom(Boolean(editTokenFor(room.id)));
     router.replace(`/planner?room=${room.id}`, { scroll: false });
     const link = `${window.location.origin}/planner?room=${room.id}`;
     const copied = await navigator.clipboard
@@ -693,7 +753,7 @@ export function Planner({ products }: { products: ProductSummary[] }) {
           {busy ? "Adding…" : `Add room to basket · ${formatPrice(total)}`}
         </button>
         <button className="btn wide" onClick={save}>
-          {roomId ? "Save changes" : "Save & get share link"}
+          {roomId && canEditRoom ? "Save changes" : "Save & get share link"}
         </button>
         {(() => {
           const loading = roomParam && roomParam !== roomId;

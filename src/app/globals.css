@@ -6411,3 +6411,35 @@ video {
 .mega .mega-all {
   color: var(--accent);
 }
+
+/* ---------- hero opens on the finished sofa (light stage) ---------- */
+/* the dark shade was only for reading over the wireframe; on the light stage it showed as a grey blob */
+.chapter-a::before {
+  display: none;
+}
+.hero-ghost {
+  border-color: currentColor;
+  background: transparent;
+}
+/* the build-up part is skipped, so the story is shorter to scroll (same speed per chapter as before) */
+.story {
+  height: 420vh;
+}
+@media (max-width: 720px) {
+  .story {
+    height: 240vh;
+  }
+  /* phones: the opening text sits over the room photo's dark fade */
+  .chapter-a {
+    color: #fff;
+  }
+  .hero-ghost {
+    border-color: rgb(255 255 255 / 0.7);
+    background: rgb(255 255 255 / 0.08);
+  }
+}
+@media (max-width: 720px) {
+  .scroll-cue {
+    color: #fff;
+  }
+}

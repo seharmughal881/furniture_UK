@@ -20,3 +20,5 @@ export const COMPANY = {
 };
 
 export const whatsappLink = (text: string) => `https://wa.me/${COMPANY.whatsapp}?text=${encodeURIComponent(text)}`;
+
+export type Company = typeof COMPANY;

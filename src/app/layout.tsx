@@ -1,30 +1,58 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, IBM_Plex_Sans_Arabic, Instrument_Serif } from "next/font/google";
-import { CanvasRoot } from "@/components/CanvasRoot";
-import { CartDrawer } from "@/components/commerce/CartDrawer";
-import { CartProvider } from "@/components/commerce/CartProvider";
-import { MotionLayer } from "@/components/Motion";
-import { Nav } from "@/components/Nav";
-import { Welcome } from "@/components/Welcome";
-import { ViewTransition } from "react";
-import { getMaterials, getProductIndex } from "@/lib/catalog";
-import "./globals.css";
+import { getCompany } from "@/lib/content/company";
+import { getContent } from "@/lib/content/read";
+
+/**
+ * Thin root layout: the document shell only.
+ *
+ * The storefront chrome (welcome screen, basket, the shared WebGL canvas, header) lives in
+ * app/(site)/layout.tsx, and the back office has its own in app/admin/layout.tsx. Keeping
+ * this file free of both means /admin never downloads three.js, never renders the shop
+ * header, and never pays for the two catalogue queries the storefront needs.
+ *
+ * The fonts stay here, on <html>, so both sections can use them -- the Arabic face in
+ * particular, because customer names and landmarks on an admin delivery note are often
+ * written in Arabic.
+ */
 
 const sans = Geist({ variable: "--font-sans", subsets: ["latin"] });
 const mono = Geist_Mono({ variable: "--font-mono", subsets: ["latin"] });
 const arabic = IBM_Plex_Sans_Arabic({ variable: "--font-arabic", subsets: ["arabic"], weight: ["400", "500"] });
 const serif = Instrument_Serif({ variable: "--font-serif", subsets: ["latin"], weight: "400", style: ["normal", "italic"] });
 
-export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
-  title: { default: "Muscat Furniture — Sofas, bedroom sets, lighting | Oman", template: "%s — Muscat Furniture" },
-  openGraph: { type: "website", siteName: "Muscat Furniture", locale: "en_OM", alternateLocale: ["ar_OM"] },
-  description:
-    "Sofa sets, bedroom sets, dining, mattresses and lighting from Muscat Furniture. See furniture in 3D, plan your room, order online or on WhatsApp — delivered across Oman.",
-};
+/**
+ * Titles, description and sharing picture come from the back office ("Search engines &
+ * sharing"), so the owner can change how the site appears in results without a deploy.
+ *
+ * generateMetadata, not a static object, because reading them touches the database. It is
+ * cached for hours under the "content" tag like every other block.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const seo = await getContent<{
+    title: string;
+    titleTemplate: string;
+    description: string;
+    shareImage: string;
+  }>("seo");
+  const company = await getCompany();
+  return {
+    metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
+    title: { default: seo.title, template: seo.titleTemplate },
+    description: seo.description,
+    openGraph: {
+      type: "website",
+      siteName: company.tradingName,
+      locale: "en_OM",
+      alternateLocale: ["ar_OM"],
+      title: seo.title,
+      description: seo.description,
+      ...(seo.shareImage ? { images: [seo.shareImage] } : {}),
+    },
+  };
+}
 
-export default async function RootLayout({ children }: LayoutProps<"/">) {
-  const [products, materials] = await Promise.all([getProductIndex(), getMaterials()]);
+export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     // suppressHydrationWarning: the inline script below may add data-welcomed to <html> before React loads
     <html lang="en" className={`${sans.variable} ${mono.variable} ${serif.variable} ${arabic.variable}`} suppressHydrationWarning>
@@ -41,20 +69,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           }}
         />
       </head>
-      <body>
-        <Welcome />
-        <CartProvider materials={materials}>
-          <CanvasRoot>
-            <Nav products={products} />
-            <MotionLayer />
-            {/* crossfades pages on navigation; product photos morph via named transitions */}
-            <ViewTransition>
-              <div id="main">{children}</div>
-            </ViewTransition>
-            <CartDrawer />
-          </CanvasRoot>
-        </CartProvider>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

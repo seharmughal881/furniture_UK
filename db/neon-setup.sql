@@ -127,6 +127,172 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS address2 TEXT NOT NULL DEFAULT '';
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS county TEXT NOT NULL DEFAULT '';
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS vat_cents INTEGER NOT NULL DEFAULT 0;
 
+-- ---------------------------------------------------------------- v4: Muscat Furniture (Oman)
+-- Money columns ending in _cents hold integer MINOR units of the shop currency
+-- (baisa for OMR: 1 OMR = 1000 baisa).
+ALTER TABLE products ALTER COLUMN kind DROP NOT NULL;              -- not every product has a 3D model
+ALTER TABLE products ALTER COLUMN width_cm DROP NOT NULL;
+ALTER TABLE products ALTER COLUMN depth_cm DROP NOT NULL;
+ALTER TABLE products ALTER COLUMN height_cm DROP NOT NULL;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'demo';
+ALTER TABLE products ADD COLUMN IF NOT EXISTS external_id BIGINT UNIQUE;    -- Shopify product id
+ALTER TABLE products ADD COLUMN IF NOT EXISTS name_ar TEXT NOT NULL DEFAULT '';
+ALTER TABLE products ADD COLUMN IF NOT EXISTS images TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE products ADD COLUMN IF NOT EXISTS compare_at_cents INTEGER;     -- "was" price
+ALTER TABLE products ADD COLUMN IF NOT EXISTS vendor TEXT NOT NULL DEFAULT '';
+ALTER TABLE products ADD COLUMN IF NOT EXISTS sku TEXT NOT NULL DEFAULT '';
+ALTER TABLE products ADD COLUMN IF NOT EXISTS in_stock BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS featured BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS colour TEXT NOT NULL DEFAULT '';   -- main fabric colour (3D preview)
+-- [{ "title": "Grey", "price_cents": 475000, "compare_at_cents": 950000, "available": true }]
+ALTER TABLE products ADD COLUMN IF NOT EXISTS variants JSONB NOT NULL DEFAULT '[]'::jsonb;
+CREATE INDEX IF NOT EXISTS products_active_category_idx ON products(active, category);
+
+-- chosen variant (e.g. colour or size) on a basket line
+ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS variant TEXT NOT NULL DEFAULT '';
+ALTER TABLE cart_items DROP CONSTRAINT IF EXISTS cart_items_cart_id_product_id_fabric_wood_metal_key;
+CREATE UNIQUE INDEX IF NOT EXISTS cart_items_line_key ON cart_items(cart_id, product_id, variant, fabric, wood, metal);
+
+-- Oman delivery details and payment
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_method TEXT NOT NULL DEFAULT 'cod';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_fee_tbc BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS landmark TEXT NOT NULL DEFAULT '';
+ALTER TABLE orders ALTER COLUMN postcode SET DEFAULT '';
+
+-- Showrooms (from the client's contact page)
+CREATE TABLE IF NOT EXISTS stores (
+  id         SERIAL PRIMARY KEY,
+  slug       TEXT UNIQUE NOT NULL,
+  name       TEXT NOT NULL,
+  city       TEXT NOT NULL,
+  address    TEXT NOT NULL,
+  phone      TEXT NOT NULL DEFAULT '',
+  whatsapp   TEXT NOT NULL DEFAULT '',
+  email      TEXT NOT NULL DEFAULT '',
+  hours      TEXT NOT NULL DEFAULT '',
+  kind       TEXT NOT NULL DEFAULT 'showroom',   -- showroom | office
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
+ALTER TABLE rooms ADD COLUMN IF NOT EXISTS style JSONB NOT NULL DEFAULT '{}'::jsonb; -- { wall, floor, photos }
+
+-- ---------------------------------------------------------------- v5: AI 3D models from product photos
+CREATE TABLE IF NOT EXISTS product_models (
+  product_id   INTEGER PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
+  status       TEXT NOT NULL CHECK (status IN ('queued', 'ready', 'failed')),
+  provider     TEXT NOT NULL,
+  model_id     TEXT NOT NULL,
+  source_image TEXT NOT NULL,
+  status_url   TEXT,
+  response_url TEXT,
+  file_name    TEXT,             -- data/models/<file_name>.glb once ready
+  error        TEXT,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ---------------------------------------------------------------- v6: security hardening
+-- A saved room is shared by link, so the link on its own must not grant write access.
+-- Saving returns a secret edit token which PUT /api/rooms/:id requires; only its SHA-256
+-- hash is kept here, so a database copy does not hand out edit rights. Rooms created
+-- before this migration have no token and are read-only: the planner saves a copy of
+-- them instead of overwriting.
+ALTER TABLE rooms ADD COLUMN IF NOT EXISTS edit_token_hash TEXT;
+
+-- Double opt-in. An address counts as subscribed only once it has confirmed, so anyone
+-- can POST any address without that address ever receiving mail. Send only to rows
+-- WHERE confirmed.
+ALTER TABLE newsletter ADD COLUMN IF NOT EXISTS confirmed     BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE newsletter ADD COLUMN IF NOT EXISTS confirm_token TEXT;
+ALTER TABLE newsletter ADD COLUMN IF NOT EXISTS confirmed_at  TIMESTAMPTZ;
+CREATE UNIQUE INDEX IF NOT EXISTS newsletter_token_idx ON newsletter(confirm_token)
+  WHERE confirm_token IS NOT NULL;
+
+-- Salted hash of the submitter's IP address -- never the address itself -- so review
+-- floods can be traced and cleaned up without storing personal data.
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS ip_hash TEXT;
+CREATE INDEX IF NOT EXISTS reviews_ip_idx ON reviews(ip_hash);
+
+-- Fixed-window rate limiting for the public write endpoints. One row per
+-- "<action>:<hashed caller>"; see src/lib/rate-limit.ts. Holds no personal data.
+CREATE TABLE IF NOT EXISTS rate_limits (
+  bucket     TEXT PRIMARY KEY,
+  hits       INTEGER NOT NULL DEFAULT 0,
+  expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS rate_limits_expires_idx ON rate_limits(expires_at);
+
+-- Retention: npm run db:cleanup deletes abandoned carts and stale rows (see scripts/db-cleanup.ts).
+CREATE INDEX IF NOT EXISTS carts_updated_idx ON carts(updated_at);
+
+-- ---------------------------------------------------------------- v7: admin panel
+-- Staff accounts for the back office. There is no public sign-up: accounts are created
+-- with `npm run admin:create`. Passwords are scrypt hashes from node:crypto
+-- (format: scrypt$N$r$p$salt$hash), so no password library is needed.
+CREATE TABLE IF NOT EXISTS admin_users (
+  id            SERIAL PRIMARY KEY,
+  email         TEXT UNIQUE NOT NULL,
+  name          TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  role          TEXT NOT NULL DEFAULT 'staff' CHECK (role IN ('staff', 'manager')),
+  active        BOOLEAN NOT NULL DEFAULT true,
+  last_login_at TIMESTAMPTZ,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Login sessions. The cookie carries a random token; only its SHA-256 hash is stored
+-- here (same reasoning as rooms.edit_token_hash above), so a copy of this table does
+-- not hand out live sessions. Deleting a row logs that browser out immediately.
+CREATE TABLE IF NOT EXISTS admin_sessions (
+  token_hash    TEXT PRIMARY KEY,
+  admin_user_id INTEGER NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+  expires_at    TIMESTAMPTZ NOT NULL,
+  user_agent    TEXT NOT NULL DEFAULT '',
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS admin_sessions_user_idx    ON admin_sessions(admin_user_id);
+CREATE INDEX IF NOT EXISTS admin_sessions_expires_idx ON admin_sessions(expires_at);
+
+-- orders.status goes live. It defaulted to 'awaiting_payment' and was never read or
+-- written, which is wrong for cash on delivery: the money arrives at handover. Existing
+-- rows are migrated first, then the column is constrained to the real workflow.
+-- placed -> confirmed -> dispatched -> delivered -> returned, cancellable before delivery.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+UPDATE orders SET status = 'placed' WHERE status = 'awaiting_payment';
+ALTER TABLE orders ALTER COLUMN status SET DEFAULT 'placed';
+-- DROP then ADD keeps this re-runnable: Postgres has no ADD CONSTRAINT IF NOT EXISTS.
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;
+ALTER TABLE orders ADD  CONSTRAINT orders_status_check
+  CHECK (status IN ('placed', 'confirmed', 'dispatched', 'delivered', 'cancelled', 'returned'));
+
+-- Audit trail: which staff member moved an order, when, and why. admin_user_id uses
+-- ON DELETE SET NULL so removing a member of staff does not delete history rows -- but
+-- that alone would erase *who* acted, so the name is also copied in at insert time.
+CREATE TABLE IF NOT EXISTS order_events (
+  id            SERIAL PRIMARY KEY,
+  order_id      UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  admin_user_id INTEGER REFERENCES admin_users(id) ON DELETE SET NULL,
+  actor_name    TEXT NOT NULL DEFAULT '',
+  from_status   TEXT,
+  to_status     TEXT NOT NULL,
+  note          TEXT NOT NULL DEFAULT '',
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE order_events ADD COLUMN IF NOT EXISTS actor_name TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS order_events_order_idx ON order_events(order_id, created_at);
+
+-- Indexes for the admin order list: newest first, and filtered by status.
+CREATE INDEX IF NOT EXISTS orders_created_idx ON orders(created_at DESC);
+CREATE INDEX IF NOT EXISTS orders_status_idx  ON orders(status, created_at DESC);
+
+-- Phone search. A plain index on orders(phone) would never be used: validation.ts accepts
+-- "+968 9123 4567", "00968 91234567" and "9123 4567", all stored verbatim, so no single
+-- literal matches them. Index the last 8 digits instead (the Omani subscriber number) and
+-- search by equality on that. regexp_replace/right are IMMUTABLE, so this is indexable.
+DROP INDEX IF EXISTS orders_phone_idx;
+CREATE INDEX IF NOT EXISTS orders_phone_digits_idx
+  ON orders (right(regexp_replace(phone, '\D', '', 'g'), 8));
+
 -- ---------------------------------------------------------------- catalogue data
 BEGIN;
 DELETE FROM reviews WHERE is_demo;

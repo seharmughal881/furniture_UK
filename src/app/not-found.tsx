@@ -1,4 +1,7 @@
 import Link from "next/link";
+// This page sits outside the (site) group -- an unmatched URL is not a storefront route --
+// so it has to bring the stylesheet in itself. It renders without the shop header.
+import "./globals.css";
 
 export default function NotFound() {
   return (

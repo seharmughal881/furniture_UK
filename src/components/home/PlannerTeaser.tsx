@@ -5,7 +5,7 @@ import { useFrame } from "@react-three/fiber";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type * as THREE from "three";
-import { Furniture } from "@/three/Furniture";
+import { Furniture } from "@/three/FurniturePiece";
 import { SceneLights, ShadowFloor } from "@/three/SceneLights";
 
 const PALETTE = { fabric: "#9aa78c", wood: "#6b4a33", metal: "#b08d57" };

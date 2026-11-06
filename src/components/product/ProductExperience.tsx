@@ -16,7 +16,7 @@ import { whatsappLink } from "@/lib/company";
 import { DELIVERY, formatPrice, savingPercent, type DepthInfo, type Material, type Product } from "@/lib/types";
 import { daylightAt } from "@/three/daylight";
 import { frameFor } from "@/three/framing";
-import { Furniture } from "@/three/Furniture";
+import { Furniture } from "@/three/FurniturePiece";
 import type { FurnitureKind } from "@/three/furniture";
 import { SceneLights, ShadowFloor } from "@/three/SceneLights";
 import { MattressLayers } from "./MattressLayers";

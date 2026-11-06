@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "db:setup": "tsx scripts/db-setup.ts",
+    "db:cleanup": "tsx scripts/db-cleanup.ts",
+    "db:neon-sql": "tsx scripts/db-neon-sql.ts",
     "admin:create": "tsx scripts/admin-create.ts",
     "import:muscat": "tsx scripts/import-muscat.ts",
     "build:preview": "NEXT_DIST_DIR=.next-preview next build",

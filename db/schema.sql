@@ -1,5 +1,21 @@
 -- Atelier schema. Safe to run repeatedly.
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+--
+-- pgcrypto is wanted for exactly one thing: gen_random_uuid(), used by the rooms, carts
+-- and orders primary keys. That function moved into core in PostgreSQL 13, and nothing
+-- here uses any other pgcrypto function -- every hash in this project is computed in Node
+-- with node:crypto, never in SQL.
+--
+-- So the extension is requested but not required. A plain CREATE EXTENSION aborted the
+-- whole setup on any server built without the contrib modules installed (a source build,
+-- a slim container), even though PostgreSQL 13+ needs nothing at all. Requires PG 13 or
+-- newer, which Neon and every supported release already are.
+DO $$
+BEGIN
+  CREATE EXTENSION IF NOT EXISTS pgcrypto;
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'pgcrypto unavailable (%); using the built-in gen_random_uuid() from PostgreSQL 13+.', SQLERRM;
+END
+$$;
 
 CREATE TABLE IF NOT EXISTS products (
   id              SERIAL PRIMARY KEY,

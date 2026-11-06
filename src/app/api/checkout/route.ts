@@ -60,10 +60,14 @@ export async function POST(request: Request) {
     }
     await client.query("DELETE FROM carts WHERE id = $1", [cartId]);
     await client.query("COMMIT");
-    await clearCartCookie();
+    // After COMMIT: the order exists either way, so a failure to clear the cookie must not
+    // turn a placed order into a 500 that invites the customer to order again.
+    await clearCartCookie().catch(() => {});
     return Response.json({ order }, { status: 201 });
   } catch (err) {
-    await client.query("ROLLBACK");
+    // Guarded like updateProduct(): on a dead connection ROLLBACK throws too, and an
+    // unguarded await here would replace the real error with that one.
+    await client.query("ROLLBACK").catch(() => {});
     throw err;
   } finally {
     client.release();

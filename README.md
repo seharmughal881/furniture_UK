@@ -46,9 +46,18 @@ every piece is generated in code, so it can assemble itself, change material and
 ```bash
 npm install
 cp .env.example .env.local      # set DATABASE_URL to your PostgreSQL
-npm run db:setup                # creates tables + loads the catalogue (safe to re-run)
+npm run db:setup                # creates tables + loads the seed catalogue (safe to re-run)
+npm run import:muscat           # loads the real 632-product catalogue AND the showrooms
 npm run dev                     # http://localhost:3000
 ```
+
+`import:muscat` is not optional for a fresh database: it is the only thing that fills the
+`stores` table, and `/stores/[slug]` uses `generateStaticParams`, which under Cache
+Components must return at least one row — so `npm run build` fails on a database that has
+only had `db:setup`. Requires PostgreSQL 13 or newer.
+
+Housekeeping: `npm run db:cleanup` drops expired rate-limit buckets and sessions, abandoned
+baskets and unconfirmed newsletter sign-ups. Run it on a daily schedule in production.
 
 ## What's on screen
 
@@ -76,12 +85,23 @@ npm run dev                     # http://localhost:3000
 
 ### Before going live
 
-The store is set up for the **UK market** (GBP inc. VAT, UK addresses, UK consumer law wording).
-See **[docs/UK-MARKET.md](docs/UK-MARKET.md)** for the researched requirements, sources and the client's launch checklist.
+The store is set up for the **Omani market**: prices in Omani rials (integer baisa, 1 OMR =
+1000 baisa, shown to 3 decimals and inclusive of Oman's 5% VAT), Omani phone validation, and
+governorate/wilaya/area addresses rather than postcodes. See
+**[docs/MUSCAT-MARKET-ANALYSIS.md](docs/MUSCAT-MARKET-ANALYSIS.md)** for the competitor
+research. `docs/UK-MARKET.md` describes the earlier UK build and is kept only for history —
+it no longer describes this store, and the `orders.county` / `orders.postcode` columns are
+leftovers from it.
 
-
-- **Payments:** checkout saves orders with status `awaiting_payment` and says "demo — no payment taken".
-  Connect Stripe Checkout (or similar) in `src/app/api/checkout/route.ts` and remove the demo banners.
+- **Payments:** checkout takes no money. Orders are saved with status `placed` and paid cash
+  on delivery; the team phones to confirm. Card payments are stubbed for AmwalPay (all
+  cards, Apple Pay, Bank Muscat EPP) — see the `AMWALPAY_*` keys in `.env.example`; with
+  `AMWALPAY_MERCHANT_ID` empty the card option shows as "Coming soon" and cannot be chosen.
+- **Delivery fee:** free over OMR 75; below that `deliveryFee()` returns `null`, the order is
+  flagged `delivery_fee_tbc` and the fee is agreed by phone.
+- **Stock:** `products.stock_qty` drives the `in_stock` flag but is never decremented when an
+  order is placed, so it does not reserve anything. Decide whether that is wanted before
+  relying on the back-office stock figures.
 - **Sample reviews:** `DELETE FROM reviews WHERE is_demo;` (they are labelled "Sample review" on the site and
   are excluded from search-engine ratings).
 - **Legal text** in `/legal` is placeholder copy — replace with reviewed policies.
@@ -96,18 +116,21 @@ See **[docs/UK-MARKET.md](docs/UK-MARKET.md)** for the researched requirements, 
 - **Back-end: Node.js route handlers** in `src/app/api` — products, rooms, inquiries, cart (`/api/cart`,
   `/api/cart/items`, `/api/cart/items/:id`), `/api/checkout`, `/api/reviews`, `/api/newsletter`. Input validated with
   zod, SQL parameterised, prices always read from the database, cart edits scoped to the visitor's own cart.
-- **PostgreSQL** via `pg` — schema in `db/schema.sql` (`products`, `materials`, `reviews`, `carts`, `cart_items`,
-  `orders`, `order_items`, `rooms`, `inquiries`, `newsletter`).
+- **PostgreSQL** via `pg` — the authoritative schema is `db/schema.sql`, which `npm run db:setup`
+  applies (`products`, `materials`, `reviews`, `carts`, `cart_items`, `orders`, `order_items`,
+  `rooms`, `inquiries`, `newsletter`, `stores`, `product_models`, `rate_limits`, `admin_users`,
+  `admin_sessions`, `order_events`, `product_events`, `site_content`). `db/neon-setup.sql` is the
+  paste-into-Neon version and is **generated** — run `npm run db:neon-sql` after changing the
+  schema, never edit it by hand.
 - **3D: three.js + React Three Fiber + drei.** A single fixed WebGL canvas (`CanvasRoot`) renders every viewport
   on every page through drei `<View>`, so there is one GL context no matter how many 3D scenes are on screen.
 
 | File | Role |
 |---|---|
 | `src/three/furniture.ts` | All 24 furniture models defined as data (lists of parts), plus footprints, heights, labels and material roles. Add a piece here. |
-| `src/three/Furniture.tsx` | Renders a piece; drives assembly, blueprint edges, explode, lamp glow. |
+| `src/three/FurniturePiece.tsx` | Renders a piece; drives assembly, blueprint edges, explode, lamp glow. |
 | `src/three/materials.ts` | Shader-patched materials: reveal dissolve, colour sweep, matching shadow depth; procedural wood/weave textures. |
 | `src/three/daylight.ts` | Hour → sun direction/colour, ambient, sky colours, lamp glow. |
 | `src/components/home/HeroStory.tsx` | Scroll story, camera path, chapters. |
 
 Tested at 60 fps on an Intel UHD 620 integrated GPU.
-# furniture_UK

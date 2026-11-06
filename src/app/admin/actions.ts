@@ -146,6 +146,10 @@ function productInputFromForm(formData: FormData) {
     heightCm: text("heightCm"),
     leadTimeWeeks: text("leadTimeWeeks"),
     images: json("images"),
+    // Must be read here: videoUrlSchema ends in .default(""), so omitting this key parses
+    // cleanly to "" instead of failing, and FIELDS then writes that "" over video_url --
+    // silently erasing the product's video on every unrelated save.
+    videoUrl: text("videoUrl"),
     variants: json("variants"),
   };
 }

@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import type { Material, Palette } from "@/lib/types";
 import { daylightAt, formatHour } from "@/three/daylight";
-import { Furniture } from "@/three/Furniture";
+import { Furniture } from "@/three/FurniturePiece";
 import { SceneLights, ShadowFloor } from "@/three/SceneLights";
 
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));

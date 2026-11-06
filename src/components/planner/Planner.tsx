@@ -11,7 +11,7 @@ import { shopifyImage } from "@/lib/images";
 import { formatPrice, type Palette, type ProductSummary, type RoomItem } from "@/lib/types";
 import { daylightAt, formatHour } from "@/three/daylight";
 import { FOOTPRINT, KIND_LABEL, STACKABLE, SURFACE, type FurnitureKind } from "@/three/furniture";
-import { Furniture } from "@/three/Furniture";
+import { Furniture } from "@/three/FurniturePiece";
 import { analyseProductImage, type ProductLook } from "@/three/productLook";
 import { ProductPhoto } from "@/three/ProductPhoto";
 import { AiModel, useAiModel } from "@/three/AiModel";

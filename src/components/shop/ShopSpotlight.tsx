@@ -6,7 +6,7 @@ import { useRef } from "react";
 import type * as THREE from "three";
 import { frameFor } from "@/three/framing";
 import type { FurnitureKind } from "@/three/furniture";
-import { Furniture } from "@/three/Furniture";
+import { Furniture } from "@/three/FurniturePiece";
 import { SceneLights, ShadowFloor } from "@/three/SceneLights";
 
 // The 3D model shown next to each category's heading.

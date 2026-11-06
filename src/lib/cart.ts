@@ -54,7 +54,10 @@ export async function readCart(cartId: string | null, db: PoolClient | typeof po
             p.lead_time_weeks AS "leadTimeWeeks", ci.quantity,
             json_build_object('fabric', ci.fabric, 'wood', ci.wood, 'metal', ci.metal) AS config
      FROM cart_items ci JOIN products p ON p.id = ci.product_id
-     WHERE ci.cart_id = $1 ORDER BY ci.id`,
+     -- p.active matters as much here as it does in the add-to-cart INSERT. Without it a
+     -- product archived *after* it was added stays in the basket and goes through
+     -- checkout, because this is the only place the price and lines are ever read.
+     WHERE ci.cart_id = $1 AND p.active ORDER BY ci.id`,
     [cartId],
   );
   return {

@@ -1,8 +1,36 @@
--- Atelier: full database setup for a new, empty PostgreSQL database (e.g. Neon).
+-- Muscat Furniture: full database setup for a new, empty PostgreSQL database (e.g. Neon).
 -- Paste into Neon -> SQL Editor -> Run. Safe to run more than once.
+--
+-- GENERATED FILE -- do not hand-edit. Regenerate with:  npm run db:neon-sql
+--
+-- Sources, concatenated in order:
+--   db/schema.sql          the authoritative schema (what `npm run db:setup` applies)
+--   db/seed-catalogue.sql  the seed materials, products and sample reviews
+--
+-- This file used to be hand-maintained and drifted badly: it had stopped at v7, so a
+-- database created from it was missing the v8 product columns (stock_qty, subcategory,
+-- vendor) and product_events, the whole v9 moderation inbox (reviews.status,
+-- inquiries.status and their companions) and the v10 site_content table -- which
+-- getContent() reads on every storefront page, so the whole site returned 500.
 
 -- Atelier schema. Safe to run repeatedly.
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+--
+-- pgcrypto is wanted for exactly one thing: gen_random_uuid(), used by the rooms, carts
+-- and orders primary keys. That function moved into core in PostgreSQL 13, and nothing
+-- here uses any other pgcrypto function -- every hash in this project is computed in Node
+-- with node:crypto, never in SQL.
+--
+-- So the extension is requested but not required. A plain CREATE EXTENSION aborted the
+-- whole setup on any server built without the contrib modules installed (a source build,
+-- a slim container), even though PostgreSQL 13+ needs nothing at all. Requires PG 13 or
+-- newer, which Neon and every supported release already are.
+DO $$
+BEGIN
+  CREATE EXTENSION IF NOT EXISTS pgcrypto;
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'pgcrypto unavailable (%); using the built-in gen_random_uuid() from PostgreSQL 13+.', SQLERRM;
+END
+$$;
 
 CREATE TABLE IF NOT EXISTS products (
   id              SERIAL PRIMARY KEY,
@@ -292,6 +320,107 @@ CREATE INDEX IF NOT EXISTS orders_status_idx  ON orders(status, created_at DESC)
 DROP INDEX IF EXISTS orders_phone_idx;
 CREATE INDEX IF NOT EXISTS orders_phone_digits_idx
   ON orders (right(regexp_replace(phone, '\D', '', 'g'), 8));
+
+-- ---------------------------------------------------------------- v8: product management
+-- Numeric stock. in_stock stays exactly what it was -- the switch the storefront reads
+-- (shop page, product page, dashboard) -- so nothing on the shop changes meaning here.
+-- stock_qty is the optional count behind it: NULL means "not counted, just use the
+-- switch", which is the right default for the 632 imported products. When a count IS
+-- kept, src/lib/admin/products.ts derives in_stock from it so the two cannot disagree.
+ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_qty INTEGER CHECK (stock_qty IS NULL OR stock_qty >= 0);
+
+-- A second taxonomy level under category. Nothing on the storefront filters by it yet,
+-- so it is purely an admin field until the shop page gains a control for it.
+ALTER TABLE products ADD COLUMN IF NOT EXISTS subcategory TEXT NOT NULL DEFAULT '';
+
+-- Who changed a product, when, and what moved -- same shape and reasoning as
+-- order_events: admin_user_id is SET NULL on staff deletion, so the name is copied in at
+-- insert time or the history would lose *who* acted. `changes` holds
+-- { field: [before, after] } for exactly the fields that actually differed.
+CREATE TABLE IF NOT EXISTS product_events (
+  id            SERIAL PRIMARY KEY,
+  product_id    INTEGER REFERENCES products(id) ON DELETE SET NULL,
+  product_slug  TEXT NOT NULL DEFAULT '',
+  admin_user_id INTEGER REFERENCES admin_users(id) ON DELETE SET NULL,
+  actor_name    TEXT NOT NULL DEFAULT '',
+  action        TEXT NOT NULL CHECK (action IN ('created', 'updated', 'archived', 'restored', 'deleted')),
+  changes       JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS product_events_product_idx ON product_events(product_id, created_at DESC);
+
+-- Admin product search. Both are lower() expression indexes because the admin list
+-- matches case-insensitively, and a plain index on the column would not be used.
+CREATE INDEX IF NOT EXISTS products_name_lower_idx ON products (lower(name));
+CREATE INDEX IF NOT EXISTS products_sku_lower_idx  ON products (lower(sku)) WHERE sku <> '';
+
+-- ---------------------------------------------------------------- v9: moderation inbox
+-- Review moderation. Anyone can post a review from the product page, so until now a
+-- stranger could put any text and any star rating straight onto the storefront -- and
+-- into the aggregateRating that search engines read.
+--
+-- The two-step default is deliberate, and matches what v7 did for orders.status: the
+-- column is added defaulting to 'approved' so every review that is ALREADY live stays
+-- live, and only then does the default change to 'pending' so newly submitted ones wait
+-- for a human. Reversing these two statements would silently empty every product page.
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'approved';
+ALTER TABLE reviews ALTER COLUMN status SET DEFAULT 'pending';
+ALTER TABLE reviews DROP CONSTRAINT IF EXISTS reviews_status_check;
+ALTER TABLE reviews ADD  CONSTRAINT reviews_status_check
+  CHECK (status IN ('pending', 'approved', 'rejected'));
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS moderated_at   TIMESTAMPTZ;
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS moderated_by   INTEGER REFERENCES admin_users(id) ON DELETE SET NULL;
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS moderator_name TEXT NOT NULL DEFAULT '';
+-- The storefront reads approved reviews per product; the admin queue reads pending ones.
+CREATE INDEX IF NOT EXISTS reviews_status_idx  ON reviews(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS reviews_product_ok_idx ON reviews(product_id) WHERE status = 'approved';
+
+-- Inquiry inbox. The table has existed since v1 but nothing ever read it, so quote
+-- requests from the product configurator have been accumulating unseen.
+ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'new';
+ALTER TABLE inquiries DROP CONSTRAINT IF EXISTS inquiries_status_check;
+ALTER TABLE inquiries ADD  CONSTRAINT inquiries_status_check
+  CHECK (status IN ('new', 'answered', 'closed'));
+ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS admin_note    TEXT NOT NULL DEFAULT '';
+ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS handled_at    TIMESTAMPTZ;
+ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS handled_by    INTEGER REFERENCES admin_users(id) ON DELETE SET NULL;
+ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS handler_name  TEXT NOT NULL DEFAULT '';
+ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS ip_hash       TEXT;
+CREATE INDEX IF NOT EXISTS inquiries_status_idx ON inquiries(status, created_at DESC);
+
+-- Newsletter: v6 added `confirmed`/`confirm_token` but nothing ever issued or checked a
+-- token. Existing rows predate double opt-in, so they are grandfathered as confirmed
+-- rather than silently dropped from a list the owner believes they have.
+UPDATE newsletter SET confirmed = true, confirmed_at = COALESCE(confirmed_at, created_at)
+ WHERE confirmed = false AND confirm_token IS NULL;
+CREATE INDEX IF NOT EXISTS newsletter_confirmed_idx ON newsletter(confirmed, created_at DESC);
+
+-- ---------------------------------------------------------------- v10: editable site content
+-- Every editable piece of the storefront that is not a product, an order or a review.
+--
+-- One row per named block rather than a table per section. The alternative -- a bespoke
+-- table for the hero, another for the footer, another for the nav -- would mean a
+-- migration, a query and an admin form for each, and the sections are plain content with
+-- no relationships to model. The shape of each block is defined and validated in
+-- src/lib/content/blocks.ts, which also holds the DEFAULT for every block, copied from
+-- the values that were hardcoded in the components.
+--
+-- That default is what makes this safe to deploy: a block with no row here renders
+-- exactly what it rendered before, so the storefront does not change until the owner
+-- actually edits something. Deleting a row is therefore a working "reset to original".
+CREATE TABLE IF NOT EXISTS site_content (
+  key          TEXT PRIMARY KEY,
+  data         JSONB NOT NULL,
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_by   INTEGER REFERENCES admin_users(id) ON DELETE SET NULL,
+  updater_name TEXT NOT NULL DEFAULT ''
+);
+
+-- ---------------------------------------------------------------- v11: product video
+-- One optional video per product, set by the admin (uploaded, or an address pasted in).
+-- Empty string, never NULL, so the storefront's "does this product have a video?" test is
+-- a plain truthiness check and never has to worry about three states.
+ALTER TABLE products ADD COLUMN IF NOT EXISTS video_url TEXT NOT NULL DEFAULT '';
 
 -- ---------------------------------------------------------------- catalogue data
 BEGIN;

@@ -21,6 +21,13 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Every other build directory this project produces. next.config.ts takes distDir
+    // from NEXT_DIST_DIR, so `npm run build:preview` writes .next-preview and a one-off
+    // build can write anything else -- and eslint would then lint the generated bundles,
+    // reporting hundreds of errors in machine-written code. ".next/**" alone did not
+    // cover them.
+    ".next-*/**",
+    "data/models/**",
   ]),
 ]);
 

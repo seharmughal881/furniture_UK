@@ -705,6 +705,9 @@ input[type="range"] {
 
 /* ---------------------------------------------------------------- planner */
 .planner {
+  /* Live width of the left panel. Set here so the layout is correct before any JS runs;
+     the drag handle overwrites it on this element. See useSideResize in Planner.tsx. */
+  --planner-side-w: 340px;
   position: relative;
   height: 100vh;
   display: grid;
@@ -714,7 +717,7 @@ input[type="range"] {
 
 @media (min-width: 960px) {
   .planner {
-    grid-template-columns: 340px 1fr;
+    grid-template-columns: var(--planner-side-w) 1fr;
     grid-template-rows: 1fr;
   }
 }
@@ -722,6 +725,9 @@ input[type="range"] {
 .planner-side {
   position: relative;
   z-index: 10;
+  /* Reserve the scrollbar, so the piece grid keeps a steady width and does not reflow a
+     column the moment the list becomes long enough to scroll. */
+  scrollbar-gutter: stable;
   background: var(--paper);
   border-right: 1px solid var(--line);
   padding: 118px 22px 22px;
@@ -740,6 +746,91 @@ input[type="range"] {
   }
 }
 
+/* --------------------------------------- drag handle between panel and room */
+/*
+ * Positioned on the seam rather than placed in the grid, so .planner stays a clean
+ * two-column template and the target can be a comfortable 12px while the line it draws
+ * stays hairline.
+ */
+.planner-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--planner-side-w);
+  z-index: 11;
+  width: 12px;
+  margin-left: -6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  /* stop a touch-drag scrolling the page instead of resizing */
+  touch-action: none;
+}
+
+/* the seam, which lights up under the cursor */
+.planner-resizer::before {
+  content: "";
+  position: absolute;
+  inset: 0 5px;
+  background: var(--ink);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+/* the grip, so the seam reads as draggable before anyone tries it */
+.planner-resizer::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 36px;
+  margin: -18px 0 0 -2px;
+  border-radius: 999px;
+  background: var(--line);
+  transition: background-color 0.18s ease;
+}
+
+.planner-resizer:hover::before,
+.planner-resizer:focus-visible::before,
+.planner[data-resizing] .planner-resizer::before {
+  opacity: 0.5;
+}
+
+.planner-resizer:hover::after,
+.planner-resizer:focus-visible::after,
+.planner[data-resizing] .planner-resizer::after {
+  background: var(--ink);
+}
+
+.planner-resizer:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+}
+
+/*
+ * While dragging: hold the resize cursor across the whole window (the pointer leaves the
+ * 12px handle constantly), kill text selection, and stop the panel and the canvas
+ * reacting -- without the last one the room orbits under the drag.
+ */
+body.planner-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.planner[data-resizing] .planner-side,
+.planner[data-resizing] .planner-stage {
+  pointer-events: none;
+}
+
+/* The stacked layout has no vertical seam, so there is nothing to drag. */
+@media (max-width: 959px) {
+  .planner-resizer {
+    display: none;
+  }
+}
+
 .planner-side h1 {
   font-family: var(--serif);
   font-weight: 400;
@@ -748,35 +839,82 @@ input[type="range"] {
   margin: 0;
 }
 
+/*
+ * Always two across, at every panel width.
+ *
+ * An earlier version reflowed to three and four columns as the panel widened, which let
+ * the product photos shrink to around 110px -- too small to tell two grey sofas apart,
+ * which is the whole job of this list. Pinning it to two means dragging the panel wider
+ * makes each photo *bigger* instead of adding more, smaller ones.
+ */
 .palette-list {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
+/*
+ * A column, so the price can be pinned to the bottom with margin-top:auto. Without that
+ * a two-line product name pushed its own price down and left the row ragged.
+ */
 .palette-item {
+  display: flex;
+  flex-direction: column;
   text-align: left;
   border: 1px solid var(--line);
   background: var(--bone);
-  border-radius: 4px;
-  padding: 10px;
+  border-radius: 6px;
+  padding: 8px;
   cursor: pointer;
   font: inherit;
   font-size: 13px;
+  line-height: 1.3;
   color: var(--ink);
-  transition: border-color 0.2s;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
 }
 
 .palette-item:hover {
   border-color: var(--ink);
+  box-shadow: 0 6px 16px -10px rgba(17, 17, 17, 0.5);
 }
 
+/*
+ * Exactly two lines, reserved whether the name needs them or not. This is what keeps the
+ * row level: the catalogue mixes "Oslo Sofa Set" with "Dublin Sofa Seater 8 Person
+ * 3+3+1+1", and without a fixed name box those two sit at different heights.
+ */
+.palette-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  min-height: 2.6em;
+}
+
+/* Kind and price on their own lines: at ~120px wide they wrapped anyway, so this makes
+   the wrap deliberate and identical on every card. */
 .palette-item small {
-  display: block;
+  display: flex;
+  flex-direction: column;
   font-family: var(--mono);
   font-size: 11px;
   color: var(--muted);
-  margin-top: 2px;
+  margin-top: auto;
+  padding-top: 6px;
+}
+
+.palette-kind {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-item small b {
+  font-weight: 400;
+  color: var(--ink);
 }
 
 .planner-stage {
@@ -1807,24 +1945,15 @@ input[type="range"] {
 /* reviews */
 .reviews {
   border-top: 1px solid var(--line);
+  /* a soft band behind the section, so the white cards read as cards */
+  background: var(--paper);
 }
-.reviews-grid {
-  display: grid;
-  gap: 40px;
-  max-width: 1400px;
+.reviews .section-head {
+  margin-bottom: 34px;
 }
-@media (min-width: 900px) {
-  .reviews-grid {
-    grid-template-columns: 320px 1fr;
-  }
-}
-.reviews-summary {
-  display: grid;
-  gap: 12px;
-  align-content: start;
-  justify-items: start;
-}
-.reviews-summary h2,
+/* kept from the old block: the heading used to live inside the score panel, it now sits
+   above the grid like "You may also like", and both stay the same size. */
+.reviews .section-head h2,
 .related h2 {
   font-family: var(--serif);
   font-weight: 400;
@@ -1832,69 +1961,270 @@ input[type="range"] {
   line-height: 1;
   margin: 0;
 }
+.reviews-grid {
+  display: grid;
+  gap: 22px;
+  max-width: 1400px;
+}
+@media (min-width: 900px) {
+  .reviews-grid {
+    grid-template-columns: 340px 1fr;
+    gap: 28px;
+    align-items: start;
+  }
+}
+
+/* ---- the score panel on the left */
+.reviews-summary {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  justify-items: start;
+  padding: 26px 24px 24px;
+  background: var(--bone);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: 0 20px 44px -34px rgb(17 17 17 / 0.55);
+}
+@media (min-width: 900px) {
+  /* follows the reader down the review list */
+  .reviews-summary {
+    position: sticky;
+    top: calc(var(--header-h) + 16px);
+  }
+}
+.rv-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.rv-label svg {
+  color: var(--accent);
+}
 .big-rating {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
   font-family: var(--serif);
-  font-size: 88px;
-  line-height: 0.9;
+  font-size: 76px;
+  line-height: 0.85;
+  letter-spacing: -0.02em;
+}
+.big-rating small {
+  font-family: var(--sans);
+  font-size: 15px;
+  color: var(--muted);
+}
+.rv-stars-big .stars > span {
+  font-size: 21px;
+  letter-spacing: 3px;
+}
+.rv-stars-big .stars small {
+  display: none;
+}
+.rv-based {
+  margin: -4px 0 0;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+/* the badge: a measured figure, not a slogan */
+.rv-seal {
+  width: 100%;
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  padding: 14px 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: radial-gradient(circle at 50% 0%, rgb(200 16 46 / 0.08), transparent 70%), var(--paper);
+  text-align: center;
+}
+.rv-seal-n {
+  font-family: var(--serif);
+  font-size: 30px;
+  line-height: 1;
+  color: var(--accent);
+}
+.rv-seal-t {
+  font-size: 12px;
+  color: var(--muted);
 }
 .dist {
   list-style: none;
   padding: 0;
-  margin: 0;
+  margin: 2px 0 0;
   width: 100%;
   display: grid;
-  gap: 6px;
+  gap: 7px;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--muted);
 }
 .dist li {
   display: grid;
-  grid-template-columns: 26px 1fr 20px;
-  gap: 8px;
+  grid-template-columns: 34px 1fr 24px;
+  gap: 10px;
   align-items: center;
 }
 .dist i {
-  height: 5px;
-  border-radius: 4px;
-  background: rgba(17, 17, 17, 0.1);
+  height: 7px;
+  border-radius: 999px;
+  background: rgb(17 17 17 / 0.08);
   overflow: hidden;
 }
 .dist b {
   display: block;
   height: 100%;
+  border-radius: 999px;
   background: var(--accent);
+}
+.dist-n {
+  text-align: right;
+  color: var(--ink);
+}
+.rv-write {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 13px 22px;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  background: var(--ink);
+  color: #fff;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+.rv-write span {
+  font-size: 16px;
+  line-height: 1;
+}
+.rv-write:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+/* ---- the review cards on the right */
+.rv-main {
+  display: grid;
+  gap: 18px;
+  align-content: start;
 }
 .review-list {
   list-style: none;
   margin: 0;
   padding: 0;
+  display: grid;
+  gap: 16px;
+}
+@media (min-width: 1200px) {
+  .review-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .review-list li {
-  padding: 22px 0;
-  border-bottom: 1px solid var(--line);
+  position: relative;
+  padding: 22px 24px 18px;
+  background: var(--bone);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: 0 16px 36px -32px rgb(17 17 17 / 0.5);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+.review-list li:hover {
+  border-color: rgb(17 17 17 / 0.22);
+  box-shadow: 0 22px 42px -30px rgb(17 17 17 / 0.55);
+  transform: translateY(-2px);
+}
+.rv-quote {
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: #fff;
+}
+.rv-quote::before {
+  content: "\201D";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  /* -62% rather than -50%: the glyph's ink sits in the top third of its line box */
+  transform: translate(-50%, -62%);
+  font-family: var(--serif);
+  font-size: 27px;
+  line-height: 1;
+}
+.review-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding-right: 38px;
+}
+.rv-avatar {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgb(200 16 46 / 0.08);
+  border: 1px solid rgb(200 16 46 / 0.18);
+  color: var(--accent);
+  font-family: var(--serif);
+  font-size: 17px;
+}
+.rv-who {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.rv-who strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+.review-head .stars small {
+  display: none;
 }
 .review-list h3 {
-  font-size: 18px;
-  font-weight: 500;
-  margin: 10px 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+  margin: 14px 0 6px;
 }
 .review-list p {
   color: #333333;
   line-height: 1.6;
-  margin: 0 0 8px;
+  font-size: 14.5px;
+  margin: 0;
 }
-.review-list small {
-  color: var(--muted);
-  font-size: 13px;
-}
-.review-head {
+.rv-foot {
   display: flex;
-  gap: 10px;
   align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
 }
-.review-head .stars small {
-  display: none;
+.rv-foot small {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12.5px;
 }
 .tag {
   font-family: var(--mono);
@@ -1907,12 +2237,77 @@ input[type="range"] {
   border: 1px solid var(--line);
   color: var(--muted);
 }
-.review-form {
-  padding: 20px;
+
+/* ---- arrows and dots */
+.rv-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 2px;
+}
+.rv-pager > button {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  padding: 0;
   border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--paper);
-  margin-bottom: 20px;
+  border-radius: 50%;
+  background: var(--bone);
+  color: var(--ink);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+.rv-pager > button:hover:not(:disabled) {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
+.rv-pager > button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.rv-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.rv-dots button {
+  width: 9px;
+  height: 9px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(17 17 17 / 0.18);
+  cursor: pointer;
+  transition: background 0.18s ease, width 0.18s ease;
+}
+.rv-dots button.on {
+  width: 24px;
+  background: var(--accent);
+}
+.rv-count {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 2px;
+}
+.review-form {
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--bone);
+  box-shadow: 0 16px 36px -32px rgb(17 17 17 / 0.5);
 }
 .star-input {
   display: flex;
@@ -1921,13 +2316,31 @@ input[type="range"] {
 .star-input button {
   border: 0;
   background: none;
-  font-size: 28px;
-  color: rgba(17, 17, 17, 0.2);
+  font-size: 30px;
+  color: rgb(17 17 17 / 0.18);
   cursor: pointer;
   padding: 0 2px;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+.star-input button:hover {
+  transform: scale(1.08);
 }
 .star-input button.on {
   color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .review-list li,
+  .rv-write,
+  .rv-dots button,
+  .star-input button {
+    transition: none;
+  }
+  .review-list li:hover,
+  .rv-write:hover,
+  .star-input button:hover {
+    transform: none;
+  }
 }
 
 /* ----------------------------------------------------------- checkout */
@@ -2088,6 +2501,224 @@ legend {
   font-family: var(--serif);
   font-weight: 400;
   font-size: 30px;
+}
+
+/* --------------------------------------------------- checkout: payment section
+   Deliberately the site's own black / white / red rather than the blue every
+   payment page uses: the customer should not feel handed off to someone else. */
+.pay-secure {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: -4px 0 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.lock-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--ink);
+}
+.pay-option {
+  grid-template-columns: auto 1fr auto;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s,
+    background 0.2s;
+}
+.pay-option:hover:not(.soon) {
+  border-color: var(--muted);
+}
+.pay-option strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-weight: 500;
+}
+/* An option that exists but cannot be chosen yet: still readable, clearly not available. */
+.pay-option.soon {
+  cursor: not-allowed;
+  background: #fff;
+  opacity: 0.72;
+}
+.pay-option.soon input {
+  cursor: not-allowed;
+}
+.soon-tag {
+  font-family: var(--mono);
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+}
+
+/* acceptance marks */
+.pay-marks {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.pay-mark {
+  width: 34px;
+  height: 22px;
+  flex: none;
+  border-radius: 4px;
+}
+.pay-mark-plate {
+  fill: #fff;
+  stroke: var(--line);
+}
+.pay-word {
+  display: grid;
+  place-items: center;
+  background: #fff;
+  border: 1px solid var(--line);
+  font-family: var(--sans);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.pay-word.visa {
+  color: #1434cb;
+  font-size: 10px;
+  font-style: italic;
+  letter-spacing: 0.02em;
+}
+.pay-word.apple {
+  color: var(--ink);
+  font-size: 11px;
+}
+.pay-word.epp {
+  color: var(--maroon);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+@media (max-width: 420px) {
+  /* keep the option readable on a phone rather than squeezing four marks beside it */
+  .pay-marks {
+    display: none;
+  }
+}
+
+.billing-fields {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px 2px;
+  border-left: 2px solid var(--accent);
+  margin-left: 2px;
+}
+
+/* ------------------------------------------- checkout: order summary with photos */
+.sum-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.sum-lines li {
+  display: grid;
+  grid-template-columns: 56px 1fr auto;
+  gap: 12px;
+  align-items: start;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+.sum-thumb {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 6px;
+  overflow: visible;
+}
+.sum-thumb img,
+.sum-thumb i {
+  display: block;
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #fff;
+  border: 1px solid var(--line);
+}
+/* the quantity rides on the corner of the photo, as it does on the basket button */
+.sum-thumb b {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--ink);
+  color: #fff;
+  font-family: var(--mono);
+  font-weight: 400;
+  font-size: 11px;
+  border: 2px solid var(--paper);
+}
+.sum-info {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.sum-info strong {
+  font-weight: 500;
+  font-size: 14px;
+  line-height: 1.35;
+}
+/* the badge on the photo already shows the count, so this is for screen readers only */
+.sr-qty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.sum-ar {
+  font-family: var(--font-arabic), "Noto Sans Arabic", sans-serif;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.sum-price {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  font-family: var(--mono);
+  font-size: 14px;
+  white-space: nowrap;
+}
+.sum-price s {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* What the was-prices add up to. It sits after the total on purpose: the total is
+   already the discounted price, so this is a statement, not a deduction. */
+.saved-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 2px 0 0;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--accent) 8%, #fff);
+  border: 1px solid color-mix(in oklab, var(--accent) 22%, #fff);
+  color: var(--accent);
+  font-size: 13px;
+}
+.saved-row strong {
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: 15px;
 }
 .order {
   max-width: 1100px;
@@ -2434,7 +3065,10 @@ bdi[dir="rtl"] {
 }
 .photo-card .card-photo {
   position: relative;
-  aspect-ratio: 1 / 1;
+  /* Height of the whole card is set here. 1/1 made each card as tall as it is wide;
+     4/3 is a quarter shorter. Nothing is cropped -- the photo is object-fit: contain,
+     so it just sits in a shorter box. Change this one ratio to retune the card. */
+  aspect-ratio: 4 / 3;
   background: #fff;
   overflow: hidden;
 }
@@ -2445,19 +3079,14 @@ bdi[dir="rtl"] {
   height: 100%;
   object-fit: contain;
   padding: 10px;
-  transition: opacity 0.35s, transform 0.5s cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition: transform 0.5s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
-.photo-card .card-photo img.alt {
-  opacity: 0;
-}
-.photo-card:hover .card-photo img.alt {
-  opacity: 1;
-}
-.photo-card:hover .card-photo img:not(.alt) {
+.photo-card:hover .card-photo img {
   transform: scale(1.03);
 }
 .photo-card .card-body {
   display: block;
+  padding: 14px 16px 16px;
 }
 .photo-card .card-body h3 {
   font-family: var(--sans);
@@ -2541,6 +3170,10 @@ bdi[dir="rtl"] {
     top: var(--header-h);
     height: calc(100vh - var(--header-h));
     margin-top: var(--header-h);
+    /* The panel is pinned to exactly one screen, so anything taller has to stay inside
+       it. Without this the mattress Layers tab spilled out of the bottom and drew over
+       the Reviews heading below. */
+    overflow: hidden;
   }
 }
 .media-tabs {
@@ -2575,17 +3208,37 @@ bdi[dir="rtl"] {
   flex-direction: column;
 }
 .gallery-main {
+  /* breathing room between the photo and the edge of the stage, and how round the photo
+     corners are. Both are overridden further down for the product page and for phones. */
+  --gallery-pad: 24px;
+  --gallery-radius: 14px;
   flex: 1;
   min-height: 56vh;
   position: relative;
 }
+/*
+ * The photo box hugs the photo instead of filling the stage and letterboxing inside it.
+ *
+ * This is the part that makes border-radius work at all. Measured on the old rule: the
+ * <img> was 731x822 while the photo painted at 663x442 -- 156px of empty element above
+ * and below it -- so a radius on the element curved transparent space and the photo's
+ * own corners stayed square. Letting width/height be auto under max-* caps gives the
+ * element the photo's aspect ratio, and margin:auto centres it, so the element edge and
+ * the photo edge become the same edge.
+ *
+ * The padding this replaces is now the gap between those caps and the stage, because a
+ * radius is drawn on the border box -- with padding it would curve outside the photo.
+ */
 .gallery-main img {
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
+  margin: auto;
+  width: auto;
+  height: auto;
+  max-width: calc(100% - 2 * var(--gallery-pad));
+  max-height: calc(100% - 2 * var(--gallery-pad));
   object-fit: contain;
-  padding: 24px;
+  border-radius: var(--gallery-radius);
 }
 .gallery-thumbs {
   display: flex;
@@ -2768,11 +3421,15 @@ bdi[dir="rtl"] {
 .palette-item img {
   display: block;
   width: 100%;
-  height: 70px;
+  /* ratio, not a fixed height, so a card in a wider panel grows its photo to match */
+  height: auto;
+  /* 4/3 rather than 16/11: these are wide room shots, and the taller box stopped them
+     being letterboxed down to a 70px strip inside the card. */
+  aspect-ratio: 4 / 3;
   object-fit: contain;
   background: #fff;
-  border-radius: 3px;
-  margin-bottom: 6px;
+  border-radius: 4px;
+  margin-bottom: 8px;
 }
 
 /* checkout select */
@@ -3704,6 +4361,23 @@ span.fly-dot {
     .trust > :nth-child(4) {
       animation-range: entry 24% entry 79%;
     }
+    /* The stagger above is cut for four cards to a row. When the shopper picks a
+       different number on the shop page, re-cut it to match, or the reveal stops
+       running left to right and looks random. Desktop only: the narrow layouts are
+       pinned to two columns and keep the stagger they already had. */
+    @media (min-width: 721px) {
+      html[data-cols="2"] .shop .photo-grid > :nth-child(2n + 1),
+      html[data-cols="3"] .shop .photo-grid > :nth-child(3n + 1) {
+        animation-range: entry 0% entry 55%;
+      }
+      html[data-cols="2"] .shop .photo-grid > :nth-child(2n + 2),
+      html[data-cols="3"] .shop .photo-grid > :nth-child(3n + 2) {
+        animation-range: entry 8% entry 63%;
+      }
+      html[data-cols="3"] .shop .photo-grid > :nth-child(3n + 3) {
+        animation-range: entry 16% entry 71%;
+      }
+    }
     .trust-item .draw,
     .how-step .draw {
       animation: drawIn linear both;
@@ -3731,7 +4405,7 @@ span.fly-dot {
   }
 }
 /* photos fade in as they arrive */
-.photo-card .card-photo img:not(.alt),
+.photo-card .card-photo img,
 .gallery-main img {
   animation: photoIn 0.6s ease both;
 }
@@ -4693,8 +5367,13 @@ video {
   }
 }
 @media (max-width: 360px) {
+  /* Two across even on the narrowest phone, for the browsing rails: one card per row
+     made a single product fill the screen, which is what "the card is too long" looks
+     like on a phone. The shop listing itself is single column by request -- see the
+     .shop .photo-grid rule in the density section, which outranks this one. */
   .photo-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
   }
   .nav {
     padding: 0 10px;
@@ -4821,8 +5500,8 @@ video {
     aspect-ratio: 1 / 1;
     flex: none;
   }
-  .gallery-main img {
-    padding: 12px;
+  .gallery-main {
+    --gallery-pad: 12px;
   }
 }
 
@@ -4881,7 +5560,8 @@ video {
     font-size: 12px;
   }
   .palette-item img {
-    height: 56px;
+    /* keep the ratio here too; a fixed height would override aspect-ratio and squash it */
+    aspect-ratio: 3 / 2;
   }
 }
 
@@ -5269,9 +5949,13 @@ video {
 .layers {
   display: flex;
   flex-direction: column;
+  /* fills the sticky panel exactly; min-height:0 lets the children shrink inside it */
+  height: 100%;
+  min-height: 0;
 }
 .layers-stage {
   position: relative;
+  flex: 1 1 auto;
   height: 52vh;
   min-height: 340px;
   background: radial-gradient(ellipse at 50% 70%, #f2f0ec 0%, var(--bone) 72%);
@@ -5297,6 +5981,11 @@ video {
   accent-color: var(--accent);
 }
 .layers-list {
+  flex: 0 1 auto;
+  min-height: 0;
+  /* the one part that scrolls, so a mattress with many layers still fits the panel */
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 18px var(--gutter) 24px;
 }
 .layers-total {
@@ -5601,6 +6290,150 @@ video {
 }
 .toggle-3d.on i::after {
   transform: translateX(12px);
+}
+
+/* ------------------------------------------------- products per row (shop only)
+   The chosen value is an attribute on <html>, written before paint by the script in
+   app/(site)/layout.tsx and updated by components/shop/GridDensity.tsx. Driving both
+   the grid and the control's own active state from CSS means the correct layout is
+   painted before React hydrates. Scoped to .shop so the same cards keep their own
+   auto-fitting layout on the home, product, wishlist and recently-viewed grids. */
+.density {
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid var(--line);
+}
+.density-btn {
+  display: grid;
+  place-items: center;
+  /* wider than it is tall, so the active pill reads as a pill rather than a blob, and
+     4px of padding above puts the group at 38px -- the height of the Price/Sort menus
+     it sits next to */
+  width: 40px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background 0.22s ease,
+    color 0.22s ease;
+}
+/* hover is where the brand red appears: the active pill stays black so it matches
+   the room segmented control sitting beside it in the same bar */
+.density-btn:hover {
+  background: var(--paper);
+  color: var(--accent);
+}
+.density-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* one bar per column: the bars split a fixed width, so fewer columns read as wider bars */
+.density-icon {
+  display: flex;
+  gap: 2.5px;
+  width: 18px;
+  height: 14px;
+}
+.density-icon i {
+  flex: 1;
+  border-radius: 1.5px;
+  background: currentColor;
+  transition:
+    background 0.22s ease,
+    transform 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* Active pill: black with white bars, exactly like .segmented a.on next to it.
+   html:not([data-cols]) covers the case where the pre-paint script was blocked, so the
+   highlighted button always agrees with the grid the stylesheet actually draws. */
+html[data-cols="2"] .density-btn[data-value="2"],
+html[data-cols="3"] .density-btn[data-value="3"],
+html[data-cols="4"] .density-btn[data-value="4"],
+html:not([data-cols]) .density-btn[data-value="4"] {
+  background: var(--ink);
+  color: #fff;
+}
+html[data-cols="2"] .density-btn[data-value="2"] .density-icon i,
+html[data-cols="3"] .density-btn[data-value="3"] .density-icon i,
+html[data-cols="4"] .density-btn[data-value="4"] .density-icon i,
+html:not([data-cols]) .density-btn[data-value="4"] .density-icon i {
+  transform: scaleY(1.08);
+}
+
+/* The grid itself. Only from 721px up: below that the stylesheet already pins the
+   cards to two columns (one under 360px) and the control is hidden. */
+@media (min-width: 721px) {
+  .shop .photo-grid {
+    grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
+    transition: gap 0.25s ease;
+  }
+  html[data-cols="2"] .shop .photo-grid {
+    --cols: 2;
+    gap: 28px;
+  }
+  html[data-cols="3"] .shop .photo-grid {
+    --cols: 3;
+    gap: 22px;
+  }
+  html[data-cols="4"] .shop .photo-grid {
+    --cols: 4;
+  }
+}
+/* A floor on narrow laptops: honouring "4 per row" at 900px would leave 190px cards,
+   so the choice is capped rather than letting the photos shrink past usefulness. */
+@media (min-width: 721px) and (max-width: 1100px) {
+  html[data-cols="4"] .shop .photo-grid {
+    --cols: 3;
+  }
+}
+@media (min-width: 721px) and (max-width: 900px) {
+  html[data-cols="3"] .shop .photo-grid,
+  html[data-cols="4"] .shop .photo-grid {
+    --cols: 2;
+  }
+}
+@media (max-width: 720px) {
+  .density {
+    display: none;
+  }
+
+  /*
+   * One product per row on phones.
+   *
+   * Scoped to the shop listing on purpose. Every other grid built from .photo-grid --
+   * home page favourites and deals, related products, recently viewed, the wishlist --
+   * keeps two across, because those are browsing rails rather than the page you came to
+   * shop on. Widen the selector to plain .photo-grid to make the whole site single
+   * column.
+   */
+  .shop .photo-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  /*
+   * A shorter photo to go with it. At full width the 4/3 card photo is ~290px tall on a
+   * 390px phone, so a single product filled the screen -- the exact complaint the
+   * two-across rule above was written to avoid. 16/10 keeps roughly two cards in view
+   * while still showing the piece properly. Delete this block for the taller 4/3 photo.
+   */
+  .shop .photo-card .card-photo {
+    aspect-ratio: 16 / 10;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .density-btn,
+  .density-icon i,
+  .shop .photo-grid {
+    transition: none;
+  }
 }
 
 .filter-menus {
@@ -6441,5 +7274,1333 @@ video {
 @media (max-width: 720px) {
   .scroll-cue {
     color: #fff;
+  }
+}
+
+
+/* ===================================================== product page, v2
+   One block, scoped to .product-media / .product-panel only. Remove from this
+   comment to the end of the file to put the page back exactly as it was. */
+
+/* ---------- 1. the photo stage ---------- */
+
+/* a soft pool of light instead of a flat white field. Deliberately faint: some
+   catalogue PNGs carry their own white background, and a strong tint would show
+   their edge as a rectangle. */
+.gallery-main {
+  background: radial-gradient(ellipse at 50% 70%, #f4f2ef 0%, #ffffff 60%);
+  overflow: hidden;
+  --gallery-pad: clamp(16px, 2.4vw, 34px);
+  --gallery-radius: 16px;
+}
+/* Repeated here because this block sits after the phone rules and would outrank them. */
+@media (max-width: 999px) {
+  .gallery-main {
+    --gallery-pad: 12px;
+    --gallery-radius: 12px;
+  }
+}
+.gallery-main img.gm {
+  transition: transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+/* a slow push-in on hover: the piece feels examinable rather than printed */
+.gallery-main:hover img.gm.ready {
+  transform: scale(1.045);
+}
+
+/* thumbnails become a vertical rail beside the photo, as on a furniture catalogue,
+   instead of a row crowded into the bottom-left corner */
+@media (min-width: 1000px) {
+  .gallery {
+    flex-direction: row-reverse;
+  }
+  .gallery-thumbs {
+    flex: 0 0 96px;
+    flex-direction: column;
+    align-content: flex-start;
+    padding: 18px 10px 18px 16px;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .gallery-thumbs button {
+    flex: 0 0 72px;
+    width: 72px;
+  }
+}
+.gallery-thumbs {
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 16px 18px;
+  scrollbar-width: none;
+}
+.gallery-thumbs::-webkit-scrollbar {
+  display: none;
+}
+.gallery-thumbs button {
+  flex: 0 0 72px;
+  height: 72px;
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 10px 20px -18px rgb(17 17 17 / 0.8);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+.gallery-thumbs button:hover {
+  transform: translateY(-2px);
+  border-color: rgb(17 17 17 / 0.3);
+}
+.gallery-thumbs button[aria-pressed="true"] {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent), 0 12px 22px -18px rgb(200 16 46 / 0.9);
+}
+
+/* the view switch sits over the middle of the stage, not off in a corner */
+.media-tabs {
+  top: 18px;
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
+  box-shadow: 0 10px 26px -20px rgb(17 17 17 / 0.9);
+  backdrop-filter: blur(6px);
+}
+
+/* ---------- 2. the details panel ---------- */
+
+/* 88px of display type left nothing for everything under it */
+.product-panel h1 {
+  font-size: clamp(40px, 4vw, 64px);
+  line-height: 0.96;
+}
+.product-panel .crumbs {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 20px;
+}
+.product-panel .rating-link {
+  margin-top: 14px;
+  text-decoration: none;
+}
+
+/* the price reads as its own block, closed by a rule */
+.product-panel .price-row {
+  gap: 12px 16px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--line);
+}
+.product-panel .price-row strong {
+  font-size: clamp(40px, 3.4vw, 52px);
+  line-height: 1;
+  letter-spacing: -0.015em;
+}
+.product-panel .price-row s {
+  font-size: 16px;
+}
+
+/* stock is a pill, not a stray line of coloured text */
+.product-panel .stock {
+  align-self: flex-start;
+  margin: -14px 0 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.product-panel .stock.in {
+  background: rgb(61 107 53 / 0.1);
+  border: 1px solid rgb(61 107 53 / 0.22);
+}
+.product-panel .stock.out {
+  background: rgb(176 0 32 / 0.08);
+  border: 1px solid rgb(176 0 32 / 0.22);
+}
+
+/* a short red rule in front of every small heading, so the panel reads as steps */
+.product-panel .label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.product-panel .label::before {
+  content: "";
+  flex: none;
+  width: 16px;
+  height: 1px;
+  background: var(--accent);
+}
+
+/* ---------- option pills ----------
+   :not(.on) matters. Repainting the background of EVERY pill white left the chosen one
+   with a white background and its near-white text, so the selected size became
+   invisible -- a black outline with nothing in it. Unchosen pills are styled here;
+   the chosen one is given its own complete look below. */
+.product-panel .chips button.chip:not(.on) {
+  background: var(--bone);
+  border-color: rgb(17 17 17 / 0.16);
+  color: var(--ink);
+}
+.product-panel .chips button.chip {
+  /* inline-flex so min-width centres the label and the tick sits on the text baseline */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 92px;
+  padding: 11px 18px;
+  font-size: 14px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+.product-panel .chips button.chip:not(.on):hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgb(17 17 17 / 0.45);
+  box-shadow: 0 8px 16px -12px rgb(17 17 17 / 0.9);
+}
+/* the chosen size: filled, legible, and carrying a tick so it reads at a glance */
+.product-panel .chips button.chip.on {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #ffffff;
+  box-shadow: 0 10px 20px -12px rgb(17 17 17 / 0.95);
+}
+.product-panel .chips button.chip.on::before {
+  content: "✓";
+  margin-right: 8px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--accent);
+}
+/* sold out: readable, obviously unavailable, not just faint */
+.product-panel .chips button.chip:disabled {
+  opacity: 1;
+  background: var(--paper);
+  border-color: rgb(17 17 17 / 0.1);
+  color: rgb(17 17 17 / 0.38);
+  text-decoration: line-through;
+}
+.product-panel .chips button.chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* ---------- fabric and wood swatches ---------- */
+.product-panel .swatch-row {
+  margin: 14px 0 6px;
+  gap: 12px;
+}
+.product-panel .swatch.sm {
+  --size: 34px;
+}
+/* the chosen colour gets a red ring, the same red as everything else that means
+   "this one"; the default rule inherited the text colour, which read as a grey smudge */
+.product-panel .swatch[aria-pressed="true"]::after {
+  inset: -5px;
+  border: 2px solid var(--accent);
+}
+.product-panel .swatch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+/* the buying row carries the weight it should */
+.product-panel .buy .btn {
+  padding: 17px 22px;
+  font-size: 15px;
+}
+.product-panel .buy .btn.solid {
+  box-shadow: 0 14px 28px -18px rgb(200 16 46 / 0.95);
+}
+
+/* delivery promises as one panel rather than three loose grey lines */
+.product-panel .perks {
+  gap: 10px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--paper);
+}
+.product-panel .perks li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  line-height: 1.5;
+}
+.product-panel .perks li::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.product-panel .accordion summary {
+  font-weight: 500;
+  transition: color 0.18s ease;
+}
+.product-panel .accordion summary:hover {
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gallery-main img.gm,
+  .gallery-thumbs button,
+  .product-panel .chips button.chip,
+  .product-panel .accordion summary {
+    transition: none;
+  }
+  .gallery-main:hover img.gm.ready,
+  .gallery-thumbs button:hover,
+  .product-panel .chips button.chip:hover:not(:disabled) {
+    transform: none;
+  }
+}
+
+/* the product's video, in the same panel as the photos and the 3D preview */
+.stage-video {
+  position: relative;
+  height: 62vh;
+  display: grid;
+  place-items: center;
+  background: #0b0b0b;
+}
+@media (min-width: 1000px) {
+  .stage-video {
+    height: 100%;
+  }
+}
+.stage-video video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #0b0b0b;
+}
+
+/* ================================================================= showroom pages */
+/* Home-page map: every place is now a link to its showroom page (TrustSections.tsx). */
+a.map-pin {
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+a.map-pin i {
+  transition: transform 0.25s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+a.map-pin b {
+  transition:
+    background 0.2s,
+    color 0.2s,
+    box-shadow 0.2s;
+  box-shadow: 0 1px 2px rgba(17, 17, 17, 0.08);
+}
+a.map-pin:hover,
+a.map-pin:focus-visible {
+  z-index: 2;
+  outline: none;
+}
+a.map-pin:hover i,
+a.map-pin:focus-visible i {
+  transform: translate(-50%, -50%) scale(1.35);
+}
+a.map-pin:hover b,
+a.map-pin:focus-visible b {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(200, 16, 46, 0.28);
+}
+a.map-pin:focus-visible b {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+/* a bigger, invisible tap target around the dot */
+a.map-pin::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 40px;
+  height: 40px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+}
+
+/* store list: card title links */
+.store-link {
+  color: inherit;
+  text-decoration: none;
+  background: linear-gradient(var(--accent), var(--accent)) 0 100% / 0 1px no-repeat;
+  transition: background-size 0.3s;
+}
+.store-link:hover {
+  background-size: 100% 1px;
+}
+
+.showroom-hero {
+  /* clear the fixed header, as .page does */
+  padding-top: calc(var(--header-h) + 28px);
+  padding-bottom: clamp(40px, 7vh, 80px);
+}
+.showroom .crumbs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 22px;
+}
+.showroom-top {
+  display: grid;
+  gap: clamp(28px, 4vw, 64px);
+  align-items: center;
+}
+@media (min-width: 960px) {
+  .showroom-top {
+    grid-template-columns: 1.25fr 1fr;
+  }
+}
+
+/* video reel */
+.reel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.reel-stage {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--ink);
+  box-shadow: 0 30px 60px -30px rgba(17, 17, 17, 0.45);
+}
+/* The client's clips are mostly portrait phone video. Cropping them to a wide frame
+   blows them up and blurs them, so show the whole clip over a soft, blurred copy of
+   its own still -- the frame stays wide and full, the furniture stays sharp. */
+.reel-stage::before {
+  content: "";
+  position: absolute;
+  inset: -40px;
+  background: var(--poster) center / cover no-repeat;
+  filter: blur(28px) brightness(0.75) saturate(1.1);
+}
+.reel-stage video {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  animation: reelIn 0.6s ease both;
+}
+@keyframes reelIn {
+  from {
+    opacity: 0;
+    transform: scale(1.03);
+  }
+}
+.reel-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.55), transparent 38%),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.35), transparent 30%);
+}
+.reel-tag {
+  position: absolute;
+  z-index: 1;
+  top: 14px;
+  left: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.reel-tag i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 0 rgba(200, 16, 46, 0.6);
+  animation: livePulse 1.8s ease-out infinite;
+}
+@keyframes livePulse {
+  70% {
+    box-shadow: 0 0 0 8px rgba(200, 16, 46, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(200, 16, 46, 0);
+  }
+}
+.reel-toggle {
+  position: absolute;
+  z-index: 1;
+  right: 14px;
+  bottom: 14px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: rgba(17, 17, 17, 0.45);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: background 0.2s;
+}
+.reel-toggle:hover,
+.reel-toggle:focus-visible {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.reel-title {
+  position: absolute;
+  z-index: 1;
+  left: 16px;
+  right: 70px;
+  bottom: 18px;
+  color: #fff;
+  font-family: var(--serif);
+  font-size: clamp(18px, 2vw, 24px);
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.reel-thumbs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.reel-thumb {
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  overflow: hidden;
+  aspect-ratio: 16 / 10;
+  background: var(--paper);
+  cursor: pointer;
+  opacity: 0.6;
+  transition:
+    opacity 0.2s,
+    border-color 0.2s,
+    transform 0.2s;
+}
+.reel-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.reel-thumb:hover {
+  opacity: 1;
+  transform: translateY(-2px);
+}
+.reel-thumb[aria-pressed="true"] {
+  opacity: 1;
+  border-color: var(--accent);
+}
+
+/* intro column */
+.showroom-intro h1 {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: clamp(46px, 6vw, 92px);
+  line-height: 0.92;
+  margin: 6px 0 18px;
+}
+.showroom-intro h1 em,
+.showroom-info h2 em,
+.showroom-others h2 em {
+  color: var(--accent);
+}
+.showroom-address {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 0 0 14px;
+  font-size: 16px;
+  line-height: 1.5;
+}
+.showroom-address svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--accent);
+}
+.showroom-lede {
+  color: var(--muted);
+  line-height: 1.6;
+  max-width: 460px;
+  margin: 18px 0 26px;
+}
+.showroom-cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.wa-btn {
+  background: #25d366;
+  border-color: #25d366;
+  color: #fff;
+}
+
+/* open-now badge */
+.open-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.open-status.pending {
+  min-width: 170px;
+  background: var(--paper);
+}
+.open-status i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.open-status.is-open {
+  color: #0f7a3d;
+  background: #e8f6ee;
+}
+.open-status.is-open i {
+  animation: livePulse 1.8s ease-out infinite;
+  box-shadow: 0 0 0 0 rgba(15, 122, 61, 0.5);
+}
+.open-status.is-closed {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 8%, #fff);
+}
+
+/* map + details */
+.showroom-find {
+  display: grid;
+  gap: 18px;
+  padding-top: 0;
+}
+@media (min-width: 960px) {
+  .showroom-find {
+    grid-template-columns: 1.6fr 1fr;
+    align-items: stretch;
+  }
+}
+.showroom-map {
+  position: relative;
+  min-height: 420px;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(circle, rgba(17, 17, 17, 0.13) 1px, transparent 1.4px) 0 0 / 14px 14px,
+    var(--paper);
+}
+.showroom-map iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  filter: grayscale(0.25) contrast(1.02);
+}
+.showroom-info {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: clamp(22px, 3vw, 34px);
+  display: grid;
+  align-content: start;
+  gap: 18px;
+}
+.showroom-info h2,
+.showroom-others h2 {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: clamp(34px, 4vw, 54px);
+  line-height: 0.95;
+  margin: 0;
+}
+.showroom-info h3 {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 6px 0 -6px;
+}
+.showroom-info dl {
+  margin: 0;
+  display: grid;
+  gap: 12px;
+}
+.showroom-info dl div {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.showroom-info dt {
+  color: var(--muted);
+  font-size: 13px;
+}
+.showroom-info dd {
+  margin: 0;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.showroom-info dd a {
+  color: inherit;
+}
+.showroom-info dd a:hover {
+  color: var(--accent);
+}
+.hours-table {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+  font-size: 14px;
+}
+.hours-table li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 10px;
+  border-radius: 8px;
+}
+.hours-table li span:last-child {
+  text-align: right;
+  color: var(--muted);
+}
+.hours-table li.today {
+  background: var(--ink);
+  color: #fff;
+}
+.hours-table li.today span:last-child {
+  color: #fff;
+}
+.hours-table em {
+  font-style: normal;
+  color: #ff8a95;
+}
+.showroom-open-maps {
+  color: var(--accent);
+  font-weight: 500;
+  text-decoration: none;
+  font-size: 14px;
+}
+.showroom-open-maps:hover {
+  text-decoration: underline;
+}
+
+/* other showrooms */
+.showroom-others {
+  padding-top: 0;
+}
+.showroom-others ul {
+  list-style: none;
+  padding: 0;
+  margin: 24px 0 0;
+  display: grid;
+  gap: 12px;
+  /* six other places: one row of six on desktop, three by two on tablets */
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 190px), 1fr));
+}
+.showroom-others a {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  padding: 18px 44px 18px 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: inherit;
+  text-decoration: none;
+  transition:
+    border-color 0.2s,
+    transform 0.2s,
+    box-shadow 0.2s;
+}
+.showroom-others a .label {
+  margin: 0;
+}
+.showroom-others strong {
+  font-weight: 500;
+}
+.showroom-others .arrow {
+  position: absolute;
+  right: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--accent);
+  transition: transform 0.2s;
+}
+.showroom-others a:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px -16px rgba(200, 16, 46, 0.5);
+}
+.showroom-others a:hover .arrow {
+  transform: translate(4px, -50%);
+}
+
+@media (max-width: 720px) {
+  .showroom-map {
+    min-height: 320px;
+  }
+  .reel-thumbs {
+    gap: 6px;
+  }
+  .showroom-cta .btn {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reel-stage video,
+  .reel-tag i,
+  .open-status.is-open i {
+    animation: none;
+  }
+}
+
+/* ===================================== media panel, v3: rounded stages + the video
+   The photo, the 3D view, the mattress layers and the video now sit in one rounded
+   card inside the panel, so the media side reads as a single object instead of a
+   full-bleed rectangle. The WebGL canvas is a separate transparent overlay, but the
+   model never reaches the corners, so rounding the stage rounds what is actually seen. */
+.product-media {
+  padding: 12px 12px 0;
+}
+@media (min-width: 1000px) {
+  .product-media {
+    padding: 18px;
+  }
+}
+.gallery-main,
+.stage-3d,
+.stage-video,
+.layers-stage {
+  border-radius: 24px;
+  overflow: hidden;
+}
+
+/* the view switch sits inside the card, clear of its rounded corners */
+.media-tabs {
+  top: 32px;
+  gap: 2px;
+  padding: 5px;
+  background: rgb(255 255 255 / 0.86);
+  border-color: rgb(17 17 17 / 0.08);
+  box-shadow: 0 14px 30px -18px rgb(17 17 17 / 0.85), inset 0 1px 0 rgb(255 255 255 / 0.9);
+  backdrop-filter: blur(10px) saturate(1.3);
+}
+.media-tabs button {
+  padding: 9px 16px;
+  font-size: 13px;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+.media-tabs button[aria-selected="false"]:hover {
+  background: rgb(17 17 17 / 0.06);
+}
+.media-tabs button[aria-selected="true"] {
+  background: var(--ink);
+  color: #ffffff;
+  box-shadow: 0 6px 14px -8px rgb(17 17 17 / 0.9);
+}
+.media-tabs button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------- the video stage ---------- */
+/* The stage used to centre the video in a grid. A percentage height against an
+   auto-sized grid row resolves to auto, so the element took its height from the
+   file's own aspect ratio -- a 432x720 phone video became 827x1378 inside a 772px
+   stage and was cropped top and bottom by the overflow. Filling the stage absolutely
+   gives object-fit a definite box to letterbox into. */
+.stage-video {
+  display: block;
+}
+.stage-video video {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+/* Our own play control. The poster is the product's own photo, so without this the tab
+   is indistinguishable from Photos and looks as though no video was ever uploaded. */
+.video-play {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  color: #ffffff;
+  background: linear-gradient(180deg, rgb(11 11 11 / 0.32) 0%, rgb(11 11 11 / 0.56) 100%);
+  transition: background 0.2s ease;
+}
+.video-play:hover {
+  background: linear-gradient(180deg, rgb(11 11 11 / 0.26) 0%, rgb(11 11 11 / 0.48) 100%);
+}
+.vp-ring {
+  display: grid;
+  place-items: center;
+  width: 78px;
+  height: 78px;
+  padding-left: 4px; /* optically centres the triangle in the circle */
+  border: 1.5px solid rgb(255 255 255 / 0.82);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.14);
+  backdrop-filter: blur(4px);
+  transition: transform 0.22s cubic-bezier(0.2, 0.7, 0.2, 1), background 0.22s ease;
+}
+.video-play:hover .vp-ring {
+  transform: scale(1.07);
+  background: rgb(255 255 255 / 0.24);
+}
+.video-play:active .vp-ring {
+  transform: scale(0.98);
+}
+.vp-text {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.video-play:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -8px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vp-ring,
+  .media-tabs button {
+    transition: none;
+  }
+  .video-play:hover .vp-ring {
+    transform: none;
+  }
+}
+
+/* a blurred wash of the poster behind an upright clip, instead of two slabs of black */
+.stage-video::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-image: var(--poster, none);
+  background-position: center;
+  background-size: cover;
+  filter: blur(34px) saturate(1.15) brightness(0.42);
+  transform: scale(1.14); /* pushes the blur's soft edge past the rounded corners */
+}
+.stage-video video {
+  z-index: 1;
+}
+
+/* "View in 3D" wrapped onto three lines on a phone, which blew the pill up into a blob
+   over the picture. The bar is centred with left:50%, and an absolutely positioned box
+   with only `left` set may use just the space from there to the right edge -- half the
+   panel, 195px on a phone. max-content sizes it to its own single line instead. */
+.media-tabs {
+  width: max-content;
+  max-width: calc(100% - 24px);
+}
+.media-tabs button {
+  white-space: nowrap;
+}
+@media (max-width: 560px) {
+  .media-tabs {
+    top: 22px;
+    gap: 1px;
+    padding: 4px;
+  }
+  .media-tabs button {
+    padding: 8px 11px;
+    font-size: 12px;
+  }
+}
+
+/* The radius alone is invisible on a near-white stage sitting on a white panel, so the
+   light stages get a hairline ring and a soft lift. The video stage is already dark
+   against white, so it needs neither. */
+.gallery-main,
+.stage-3d,
+.layers-stage {
+  box-shadow: 0 18px 40px -34px rgb(17 17 17 / 0.55), inset 0 0 0 1px rgb(17 17 17 / 0.07);
+}
+
+/* ======================================= the video, as a handset on a big screen
+   On a phone the clip already fills the panel, which is right -- it was filmed for a
+   phone and the panel is phone-shaped. On a laptop the same clip in a wide panel is two
+   thirds empty, so the video is given a device-shaped frame floating on the blurred
+   poster. The frame takes its proportions from the file (--ratio, set once the metadata
+   lands), so a square or landscape clip gets a frame that fits it rather than a crop. */
+.video-frame {
+  position: absolute;
+  inset: 0;
+}
+@media (min-width: 1000px) {
+  .stage-video {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* the view switch floats over the top of the panel, so the handset starts below it
+       rather than being overlapped by it */
+    padding: 78px 30px 34px;
+  }
+  .video-frame {
+    position: relative;
+    inset: auto;
+    height: 100%;
+    width: auto;
+    max-width: 100%;
+    aspect-ratio: var(--ratio, 0.5625);
+    border-radius: 36px;
+    overflow: hidden;
+    box-shadow: 0 0 0 10px rgb(12 12 12 / 0.92), 0 0 0 11px rgb(255 255 255 / 0.16),
+      0 46px 90px -42px rgb(0 0 0 / 0.95);
+  }
+  /* the frame is cut to the clip's own shape, so cover crops nothing -- it only removes
+     the half-pixel letterbox that rounding the frame's height would otherwise leave */
+  .stage-video video {
+    object-fit: cover;
+  }
+  .video-play {
+    border-radius: 36px;
+  }
+}
+
+/* showroom pages: Street View / videos tabs (ShowroomMedia.tsx).
+   Not .media-tabs: that name is the product page's floating 3D/photo switch. */
+.showroom-media {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.showroom-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  width: fit-content;
+  border-radius: 999px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+}
+.showroom-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: 500 13px var(--sans);
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    color 0.2s;
+}
+.showroom-tabs button:hover {
+  color: var(--ink);
+}
+.showroom-tabs button[aria-selected="true"] {
+  background: var(--ink);
+  color: #fff;
+}
+.showroom-tabs button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.street-stage {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #1a1a1a;
+  box-shadow: 0 30px 60px -30px rgba(17, 17, 17, 0.45);
+  animation: reelIn 0.6s ease both;
+}
+.street-stage iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+/* Google draws its own address card top-left, so our tag sits bottom-left */
+.street-tag {
+  top: auto;
+  bottom: 34px;
+  pointer-events: none;
+}
+
+/* ===================================== the video as its own column, on a laptop only
+   Clicking Video on a wide screen does not hide the photograph: the page becomes three
+   columns and the clip arrives in a handset beside the details. On a phone the rail is
+   never rendered (see videoInRail in ProductExperience), so none of this applies there. */
+@media (min-width: 1000px) {
+  .product.rail-open {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(230px, 300px);
+  }
+  .video-rail {
+    position: sticky;
+    top: var(--header-h);
+    margin-top: var(--header-h);
+    height: calc(100vh - var(--header-h));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    min-width: 0;
+    padding: 26px 20px;
+    border-left: 1px solid var(--line);
+    background: var(--paper);
+  }
+  /* inside the rail the stage is just a centring box: no dark field, no blur, no radius
+     of its own -- the handset is the whole of it */
+  .video-rail .stage-video {
+    flex: 0 1 auto;
+    min-height: 0;
+    width: 100%;
+    height: auto;
+    padding: 0;
+    background: transparent;
+    border-radius: 0;
+    overflow: visible;
+    box-shadow: none;
+  }
+  .video-rail .stage-video::before {
+    content: none;
+  }
+  /* The rail is narrow and tall, so width decides the handset's size and the aspect
+     ratio gives the height. Sizing from the height instead made the frame hit max-width
+     and squash: a 0.60 clip came out in a 0.37 box and was cropped by object-fit. */
+  .video-rail .video-frame {
+    width: 100%;
+    height: auto;
+    max-height: 100%;
+    border-radius: 30px;
+    box-shadow: 0 0 0 8px rgb(14 14 14 / 0.94), 0 0 0 9px rgb(255 255 255 / 0.18),
+      0 34px 60px -34px rgb(0 0 0 / 0.75);
+  }
+  .video-rail .video-play {
+    border-radius: 30px;
+  }
+  .video-rail .vp-ring {
+    width: 62px;
+    height: 62px;
+  }
+  .video-rail .vp-text {
+    font-size: 10px;
+  }
+  .rail-close {
+    flex: 0 0 auto;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--bone);
+    color: var(--ink);
+    font: inherit;
+    font-size: 12px;
+    padding: 8px 16px;
+    cursor: pointer;
+    transition: border-color 0.18s ease, background 0.18s ease;
+  }
+  .rail-close:hover {
+    border-color: rgb(17 17 17 / 0.4);
+    background: #fff;
+  }
+  .rail-close:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+/* On a large display there is room for the handset to read at the size it does in the
+   approved design, without squeezing the photograph at 1024. */
+@media (min-width: 1360px) {
+  .product.rail-open {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(300px, 350px);
+  }
+}
+
+/* ================================================================= responsive pass (Nov 2026)
+   From a sweep of every storefront page at 12 sizes, 320px phones to 2560px screens.
+   Tap targets follow WCAG 2.5.8: at least 24 x 24 CSS px for anything tapped on its own. */
+
+/* Shop video dots: the dot keeps its 8px look, the button around it becomes 24px. */
+.reel-dots {
+  gap: 0;
+  bottom: -30px;
+}
+.reel-dots button,
+.reel-dots button[aria-pressed="true"] {
+  width: 24px;
+  height: 24px;
+  border-radius: 0;
+  background: none;
+  display: grid;
+  place-items: center;
+}
+.reel-dots button[aria-pressed="true"] {
+  width: 32px;
+}
+.reel-dots button::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--line);
+  transition:
+    width 0.25s,
+    background 0.25s;
+}
+.reel-dots button[aria-pressed="true"]::before {
+  width: 20px;
+  border-radius: 4px;
+  background: var(--accent);
+}
+
+/* Sliders (planner time of day, filters): a 24px-tall touch strip, same look. */
+input[type="range"] {
+  min-height: 24px;
+}
+
+/* Header logo was 22px tall. */
+.nav-logo {
+  padding-block: 2px;
+}
+
+/* Breadcrumbs and the showroom contact links are tapped on their own, not inside a sentence. */
+.crumbs a {
+  display: inline-block;
+  padding-block: 4px;
+}
+.showroom-info dd a,
+.showroom-open-maps {
+  display: inline-block;
+  padding-block: 2px;
+}
+
+@media (max-width: 720px) {
+  /* 10px badges on product cards were below a comfortable reading size on phones */
+  .badges .badge {
+    font-size: 11px;
+  }
+}
+
+/* Showroom tabs: on small phones both labels stay on one line, sharing the width. */
+@media (max-width: 420px) {
+  .showroom-tabs {
+    display: flex;
+    width: 100%;
+  }
+  .showroom-tabs button {
+    flex: 1;
+    justify-content: center;
+    padding: 9px 8px;
+    font-size: 12.5px;
+    white-space: nowrap;
+  }
+}
+
+/* Product cards on phones: ONE card per row on every grid -- shop, home favourites and
+   deals, related products, recently viewed and the wishlist (by request: a phone screen
+   is too narrow for two). The photo is 16/10 so a full-width card does not fill the
+   whole screen, and with the full width there is room for both buttons side by side. */
+@media (max-width: 720px) {
+  .photo-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .photo-card .card-photo {
+    aspect-ratio: 16 / 10;
+  }
+  /* one card per row, so no left-to-right stagger in the scroll reveal */
+  .photo-grid > :nth-child(n) {
+    animation-range: entry 0% entry 55%;
+  }
+}
+@media (max-width: 720px) and (hover: none) {
+  .photo-card .card-actions {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    flex-direction: row;
+  }
+  .photo-card .card-act {
+    flex: 1;
+  }
+}
+
+/* Phone held sideways (short screen): the welcome screen's title was cut off at the
+   top, and the square product photo was ~820px tall on a 390px-high screen. */
+@media (max-height: 520px) {
+  .welcome-buddy {
+    display: none;
+  }
+  .welcome-inner {
+    padding: 12px;
+  }
+  .welcome-kicker {
+    margin-top: 0;
+  }
+  .welcome-title {
+    font-size: clamp(34px, 7vw, 60px);
+  }
+}
+@media (max-width: 999px) and (orientation: landscape) and (max-height: 600px) {
+  .gallery-main {
+    aspect-ratio: auto;
+    height: calc(100svh - var(--header-h) - 24px);
+  }
+}
+
+/* Very wide screens (1800px+, e.g. 2560px monitors): every section was left-aligned with
+   its grids capped at 1400px, leaving a wide empty band on the right. The side gutter
+   grows instead, so all content sits centred in a 1680px column, and product grids use
+   that full column so they line up with the filter bar above them. */
+@media (min-width: 1800px) {
+  :root {
+    --gutter: calc((100vw - 1680px) / 2);
+  }
+  .grid {
+    max-width: none;
+  }
+  /* The product page and the room planner are full-screen two-pane layouts, not
+     centred columns; the wide gutter squeezed the product panel to one word per line. */
+  .product,
+  .planner {
+    --gutter: 56px;
+  }
+}
+
+/* Shop filter dropdowns on phones: a phone rule above pins every menu to the right of its
+   button. That suits Sort (on the right) but pushed Price's 190px menu up to 50px off the
+   left edge of a 320-390px screen. Price, the left-hand menu, opens from its left edge. */
+@media (max-width: 720px) {
+  .menu-list:not(.right) {
+    left: 0;
+    right: auto;
   }
 }

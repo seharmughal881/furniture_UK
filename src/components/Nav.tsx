@@ -22,7 +22,30 @@ export type NavCopy = {
   departments: { title: string; categories: string }[];
 };
 
-export function Nav({ products, copy }: { products: ProductSummary[]; copy: NavCopy }) {
+/** One row of the header search's results; served by /api/search-index. */
+type SearchItem = Pick<ProductSummary, "slug" | "name" | "nameAr" | "category" | "priceCents" | "image">;
+
+// Fetched once per visit, the first time search is opened or its icon is reached; a failed
+// request is forgotten so the next attempt tries again.
+let searchIndex: Promise<SearchItem[]> | null = null;
+function loadSearchIndex() {
+  searchIndex ??= fetch("/api/search-index")
+    .then((r) => {
+      if (!r.ok) throw new Error(`search index ${r.status}`);
+      return r.json() as Promise<SearchItem[]>;
+    })
+    .catch((e) => {
+      searchIndex = null;
+      throw e;
+    });
+  return searchIndex;
+}
+
+/**
+ * `counts` (products per category) and `total` are all the header needs up front; the
+ * catalogue itself is no longer sent with every page -- see /api/search-index.
+ */
+export function Nav({ counts: countsByCategory, total, copy }: { counts: Record<string, number>; total: number; copy: NavCopy }) {
   // "sofas, tables, decor" as typed in the back office -> the category slugs to list.
   const departments = copy.departments.map((d) => ({
     title: d.title,
@@ -35,11 +58,7 @@ export function Nav({ products, copy }: { products: ProductSummary[]; copy: NavC
   const [menu, setMenu] = useState(false);
   const [mega, setMega] = useState(false);
   const [search, setSearch] = useState(false);
-  const counts = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const p of products) m.set(p.category, (m.get(p.category) ?? 0) + 1);
-    return m;
-  }, [products]);
+  const counts = useMemo(() => new Map(Object.entries(countsByCategory)), [countsByCategory]);
 
   // close a menu once one of its links is followed
   const closeOnLink = (close: () => void) => (e: React.MouseEvent) => {
@@ -105,7 +124,14 @@ export function Nav({ products, copy }: { products: ProductSummary[]; copy: NavC
           ))}
         </nav>
         <div className="nav-actions">
-          <button className="icon-btn" aria-label="Search" onClick={() => setSearch(true)}>
+          <button
+            className="icon-btn"
+            aria-label="Search"
+            onClick={() => setSearch(true)}
+            // start fetching the list as the pointer arrives, so results are there on open
+            onPointerEnter={() => void loadSearchIndex().catch(() => {})}
+            onFocus={() => void loadSearchIndex().catch(() => {})}
+          >
             <SearchIcon />
           </button>
           <WishlistCount />
@@ -150,7 +176,7 @@ export function Nav({ products, copy }: { products: ProductSummary[]; copy: NavC
               View in 3D
             </Link>
             <Link href="/shop" className="mega-all">
-              Shop all {products.length} products →
+              Shop all {total} products →
             </Link>
           </div>
         </div>
@@ -159,7 +185,7 @@ export function Nav({ products, copy }: { products: ProductSummary[]; copy: NavC
       <div onClick={closeOnLink(() => setMenu(false))}>
         <MobileMenu open={menu} onClose={() => setMenu(false)} />
       </div>
-      {search && <SearchOverlay products={products} onClose={() => setSearch(false)} />}
+      {search && <SearchOverlay onClose={() => setSearch(false)} />}
       <a
         className="wa-float"
         href={whatsappLink("Hello Muscat Furniture, I have a question.")}
@@ -198,11 +224,23 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
   );
 }
 
-function SearchOverlay({ products, onClose }: { products: ProductSummary[]; onClose: () => void }) {
+function SearchOverlay({ onClose }: { onClose: () => void }) {
   const [q, setQ] = useState("");
+  const [products, setProducts] = useState<SearchItem[] | null>(null);
+  const [failed, setFailed] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => input.current?.focus(), []);
+  useEffect(() => {
+    let live = true;
+    loadSearchIndex()
+      .then((list) => live && setProducts(list))
+      .catch(() => live && setFailed(true));
+    return () => {
+      live = false;
+    };
+  }, []);
   const results = useMemo(() => {
+    if (!products) return [];
     const t = q.trim().toLowerCase();
     if (!t) return products.slice(0, 12);
     return products
@@ -241,7 +279,9 @@ function SearchOverlay({ products, onClose }: { products: ProductSummary[]; onCl
               </Link>
             </li>
           ))}
-          {results.length === 0 && <li className="hint">No products match “{q}”.</li>}
+          {!products && !failed && <li className="hint">Loading products…</li>}
+          {failed && <li className="hint">Search could not load. Check your connection and try again.</li>}
+          {products && results.length === 0 && <li className="hint">No products match “{q}”.</li>}
         </ul>
       </div>
     </div>

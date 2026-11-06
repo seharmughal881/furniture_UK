@@ -33,16 +33,29 @@ const csp = [
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
   // Inline style attributes are used throughout the storefront (progress bars, 3D overlays).
   "style-src 'self' 'unsafe-inline'",
-  `img-src 'self' data: blob: ${SHOPIFY_CDN} ${BLOB_FILES}`,
-  // Product videos stream from Shopify's CDN.
-  `media-src 'self' blob: ${SHOPIFY_CDN}`,
+  // Any https image host, not an allow-list of two.
+  //
+  // The back office lets the owner paste an image address from anywhere (see
+  // ImageManager), and the catalogue's own photos live on Shopify's CDN. Restricting
+  // this to a pair of hosts silently broke that feature: the URL saved fine and then
+  // showed an empty box, with the reason visible only in the browser console.
+  //
+  // Images are a far weaker sink than scripts -- no code executes -- so the cost is that
+  // a pasted address can act as a tracking beacon for whoever hosts it. The admin
+  // choosing to paste it is already trusted with the catalogue, and Referrer-Policy
+  // limits what that host learns. script-src stays locked down, which is where XSS lives.
+  "img-src 'self' data: blob: https:",
+  // Product videos stream from Shopify's CDN; same reasoning for owner-supplied media.
+  "media-src 'self' blob: https:",
   // next/font self-hosts the Google fonts at build time, so 'self' is enough.
   "font-src 'self' data:",
   // GLTFLoader fetches models from our own /api/models/*; the dev websocket is for HMR.
   `connect-src 'self' ${SHOPIFY_CDN} ${BLOB_UPLOAD} ${BLOB_FILES}${isDev ? " ws: http://localhost:*" : ""}`,
   "worker-src 'self' blob:",
   "object-src 'none'",
-  "frame-src 'none'",
+  // Only Google Maps may be framed: the showroom pages (app/(site)/stores/[slug]) embed
+  // its keyless map. Every other origin is still refused.
+  "frame-src https://www.google.com https://maps.google.com",
   "base-uri 'self'",
   "form-action 'self'",
   "frame-ancestors 'none'",
@@ -63,6 +76,15 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  /**
+   * Hostnames allowed to request dev-only assets, so the site can be opened on a phone.
+   * Next blocks cross-origin dev requests by default; without these entries the page
+   * loads but its scripts and styles are refused. Development only -- it has no effect
+   * on a production build. 192.168.0.110 is this machine on the local network; replace
+   * it if the router hands out a different address.
+   */
+  allowedDevOrigins: ["192.168.0.110", "**.ngrok-free.app", "**.ngrok-free.dev", "**.ngrok.app", "**.ngrok.io"],
+
   // The client preview (npm run preview) builds into its own folder so the dev server,
   // which uses .next, can be restarted or cleaned without breaking the preview.
   distDir: process.env.NEXT_DIST_DIR || ".next",

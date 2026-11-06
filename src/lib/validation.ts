@@ -162,6 +162,21 @@ export const imageUrlSchema = z
   .max(600)
   .refine((s) => s.startsWith("https://") || s.startsWith("/"), "Images must be an https:// address or a /path");
 
+/**
+ * One optional video address. Same https-only rule as a photo -- this is what keeps
+ * "javascript:" and "data:" out of a <video src> on the storefront -- but allowed to be
+ * empty, which is how a product says "no video".
+ */
+export const videoUrlSchema = z
+  .string()
+  .trim()
+  .max(600)
+  .refine(
+    (s) => s === "" || s.startsWith("https://") || s.startsWith("/"),
+    "A video must be an https:// address or a /path",
+  )
+  .default("");
+
 export const productSlugSchema = z
   .string()
   .trim()
@@ -222,6 +237,7 @@ export const productFormSchema = z.object({
   heightCm: optionalInt("Height", 10000),
   leadTimeWeeks: optionalInt("Lead time", 104),
   images: z.array(imageUrlSchema).max(12).default([]),
+  videoUrl: videoUrlSchema,
   variants: z.array(productVariantSchema).max(40).default([]),
 });
 

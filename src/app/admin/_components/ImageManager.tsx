@@ -38,6 +38,10 @@ export function ImageManager({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  // Addresses the browser could not load. A pasted link can be dead, moved, or
+  // hotlink-protected (Google Images thumbnails are all three), and without this the
+  // owner just sees an empty square with no idea why.
+  const [failed, setFailed] = useState<string[]>([]);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const limit = single ? 1 : MAX_IMAGES;
@@ -107,7 +111,18 @@ export function ImageManager({
             <li key={url}>
               {/* A plain <img>, like the whole storefront: these are arbitrary remote URLs
                   and next/image would need every host allow-listed up front. */}
-              <img src={url} alt="" loading="lazy" />
+              <img
+                src={url}
+                alt=""
+                loading="lazy"
+                onError={() => setFailed((prev) => (prev.includes(url) ? prev : [...prev, url]))}
+                onLoad={() => setFailed((prev) => prev.filter((u) => u !== url))}
+              />
+              {failed.includes(url) && (
+                <span className="adm-thumb-bad" title={url}>
+                  Will not load
+                </span>
+              )}
               {i === 0 && !single && <span className="adm-thumb-main">Main photo</span>}
               <div className="adm-thumb-tools">
                 {!single && (
@@ -188,6 +203,14 @@ export function ImageManager({
       {error && (
         <p className="adm-notice" role="alert">
           {error}
+        </p>
+      )}
+      {failed.length > 0 && (
+        <p className="adm-notice" role="alert">
+          {failed.length === 1 ? "One picture" : `${failed.length} pictures`} could not be loaded from{" "}
+          {failed.length === 1 ? "its address" : "their addresses"}. Remove{" "}
+          {failed.length === 1 ? "it" : "them"} and upload the photo instead — addresses copied from Google
+          Images stop working, because Google only lets its own pages use them.
         </p>
       )}
     </div>

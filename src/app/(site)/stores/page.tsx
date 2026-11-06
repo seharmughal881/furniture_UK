@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Footer } from "@/components/Footer";
 import { getStores } from "@/lib/catalog";
 
@@ -24,10 +25,17 @@ export default async function StoresPage() {
           {stores.map((s) => (
             <article key={s.slug} className="store-card">
               <p className="label">{s.kind === "office" ? "Head office" : s.city}</p>
-              <h2>{s.name}</h2>
+              <h2>
+                <Link href={`/stores/${s.slug}`} className="store-link">
+                  {s.name}
+                </Link>
+              </h2>
               <p>{s.address}</p>
               {s.hours && <p className="hint">{s.hours}</p>}
               <div className="store-actions">
+                <Link className="chip on" href={`/stores/${s.slug}`}>
+                  View showroom →
+                </Link>
                 {s.phone && (
                   <a className="chip" href={`tel:+${digits(s.phone)}`}>
                     Call {s.phone}

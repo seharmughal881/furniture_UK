@@ -4,7 +4,7 @@ import { OrbitControls, PerspectiveCamera, View } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, ViewTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, ViewTransition } from "react";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { QtyStepper } from "@/components/commerce/CartDrawer";
@@ -225,6 +225,76 @@ function Gallery({ images, name, slug, depth }: { images: string[]; name: string
   );
 }
 
+/**
+ * Is there room beside the details for the video to sit in its own column? Matches the
+ * breakpoint the stylesheet uses for the two-column product layout. The server and the
+ * first paint answer "no", which is correct: the video is only ever reached by a click.
+ */
+const WIDE = "(min-width: 1000px)";
+const subscribeWide = (onChange: () => void) => {
+  const mq = window.matchMedia(WIDE);
+  mq.addEventListener("change", onChange);
+  return () => mq.removeEventListener("change", onChange);
+};
+const isWide = () => window.matchMedia(WIDE).matches;
+
+/**
+ * The product's own video, played in the media panel. Shown only when one is set.
+ *
+ * The poster is the product's first photo, so on its own this tab looks exactly like the
+ * Photos tab and reads as "nothing happened". The play control below is ours, drawn over a
+ * scrim, so it is obvious at a glance that this panel holds a video. It gets out of the way
+ * the moment the video starts and the browser's own controls take over.
+ */
+function ProductVideo({ src, poster, name }: { src: string; poster?: string; name: string }) {
+  const video = useRef<HTMLVideoElement>(null);
+  const [started, setStarted] = useState(false);
+  // 50 of the 51 clips in the catalogue were filmed upright on a phone, but one is square,
+  // so the frame takes its shape from the file rather than assuming 9:16. Until the metadata
+  // arrives it holds 9:16, which is what nearly every one of them turns out to be.
+  const [ratio, setRatio] = useState<number | null>(null);
+  return (
+    <div
+      className={`stage-video${started ? " playing" : ""}`}
+      /* the poster, blurred, fills the stage behind the frame instead of a slab of black */
+      style={poster ? ({ "--poster": `url("${poster}")` } as React.CSSProperties) : undefined}
+    >
+      <div className="video-frame" style={ratio ? ({ "--ratio": String(ratio) } as React.CSSProperties) : undefined}>
+        {/* controls, not autoplay: this is a thing the shopper chose to open, not decoration */}
+        <video
+          ref={video}
+          src={src}
+          poster={poster}
+          controls
+          playsInline
+          preload="metadata"
+          onLoadedMetadata={(e) => {
+            const v = e.currentTarget;
+            if (v.videoWidth && v.videoHeight) setRatio(v.videoWidth / v.videoHeight);
+          }}
+          onPlay={() => setStarted(true)}
+          aria-label={`Video: ${name}`}
+        />
+        {!started && (
+          <button
+            type="button"
+            className="video-play"
+            onClick={() => video.current?.play().catch(() => {})}
+            aria-label={`Play video: ${name}`}
+          >
+            <span className="vp-ring" aria-hidden>
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor">
+                <path d="M8 5.6v12.8a.8.8 0 0 0 1.22.68l10.2-6.4a.8.8 0 0 0 0-1.36L9.22 4.92A.8.8 0 0 0 8 5.6Z" />
+              </svg>
+            </span>
+            <span className="vp-text">Play video</span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function ProductExperience({
   product,
   materials,
@@ -246,7 +316,15 @@ export function ProductExperience({
   const [qty, setQty] = useState(1);
   // mattresses open on what they are made of
   const layered = product.category === "mattresses";
-  const [tab, setTab] = useState<"photos" | "3d" | "layers">(layered ? "layers" : "photos");
+  // What this product actually has decides what can be shown. A product with nothing but
+  // photos has nothing to switch between, so it gets no switch at all.
+  const hasVideo = Boolean(product.videoUrl);
+  const [tab, setTab] = useState<"photos" | "3d" | "layers" | "video">(layered ? "layers" : "photos");
+  // On a laptop the video opens in a column of its own beside the details, so the photo
+  // stays on screen. On a phone there is no room for that, and it takes over the media
+  // panel instead -- which is also the shape these clips were filmed in.
+  const wide = useSyncExternalStore(subscribeWide, isWide, () => false);
+  const videoInRail = hasVideo && tab === "video" && wide;
 
   // 3D preview colours: start from the product's own colour, let the customer try others
   const fabrics = materials.filter((m) => m.role === "fabric");
@@ -266,9 +344,9 @@ export function ProductExperience({
     `Hello Muscat Furniture, I'm interested in: ${product.name}${variantTitle ? ` (${variantTitle})` : ""} × ${qty} — ${formatPrice(price)}. ${window.location.href}`;
 
   return (
-    <div className="product">
+    <div className={`product${videoInRail ? " rail-open" : ""}`}>
       <div className="product-media">
-        {(product.kind || layered) && (
+        {(product.kind || layered || hasVideo) && (
           <div className="media-tabs" role="tablist" aria-label="Product views">
             {layered && (
               <button role="tab" aria-selected={tab === "layers"} onClick={() => setTab("layers")}>
@@ -283,12 +361,23 @@ export function ProductExperience({
                 View in 3D
               </button>
             )}
+            {hasVideo && (
+              <button role="tab" aria-selected={tab === "video"} onClick={() => setTab("video")}>
+                Video
+              </button>
+            )}
           </div>
         )}
         {tab === "layers" && layered ? (
           <MattressLayers name={product.name} description={product.description} />
         ) : tab === "3d" && product.kind ? (
           <Preview3D kind={product.kind} fabric={fabric} wood={wood} />
+        ) : tab === "video" && hasVideo && !wide ? (
+          <ProductVideo
+            src={product.videoUrl}
+            poster={product.images[0] ? shopifyImage(product.images[0], 800) : undefined}
+            name={product.name}
+          />
         ) : (
           <Gallery images={product.images} name={product.name} slug={product.slug} depth={depth} />
         )}
@@ -428,7 +517,7 @@ export function ProductExperience({
         </ul>
 
         <div className="accordion">
-          <details open>
+          <details>
             <summary>Description</summary>
             {paragraphs.map((p, n) => (
               <p key={n}>{p}</p>
@@ -460,6 +549,19 @@ export function ProductExperience({
           </details>
         </div>
       </section>
+
+      {videoInRail && (
+        <aside className="video-rail">
+          <ProductVideo
+            src={product.videoUrl}
+            poster={product.images[0] ? shopifyImage(product.images[0], 800) : undefined}
+            name={product.name}
+          />
+          <button type="button" className="rail-close" onClick={() => setTab("photos")}>
+            Close video
+          </button>
+        </aside>
+      )}
 
       <div className="buy-bar">
         <div>

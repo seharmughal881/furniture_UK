@@ -1,8 +1,10 @@
 import Link from "next/link";
+import { getStores } from "@/lib/catalog";
 import { CATEGORIES } from "@/lib/catalog-data";
 import { videosFor } from "@/lib/category-videos";
 import { getContent } from "@/lib/content/read";
 import { shopifyImage } from "@/lib/images";
+import { storeForLabel } from "@/lib/showrooms";
 import type { ProductSummary } from "@/lib/types";
 import { CategoryCarousel } from "./CategoryCarousel";
 
@@ -158,6 +160,7 @@ export async function ShowroomMap() {
     buttonLabel: string;
     cities: { name: string; x: number; y: number; side: "r" | "l" | "b" | "t"; office: boolean }[];
   }>("showroom_map");
+  const stores = await getStores();
   const CITIES = copy.cities;
   const hq = CITIES[0];
   if (!hq) return null;
@@ -173,24 +176,38 @@ export async function ShowroomMap() {
           {copy.buttonLabel}
         </Link>
       </div>
-      <div className="map-panel" role="img" aria-label="Diagram of Muscat Furniture showrooms across Oman">
+      {/* Each place opens its showroom page. Not role="img" any more: it holds links. */}
+      <nav className="map-panel" aria-label="Showrooms on the map">
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="map-lines" aria-hidden>
           {CITIES.slice(1).map((c) => (
             <line key={c.name} x1={hq.x} y1={hq.y} x2={c.x} y2={c.y} vectorEffect="non-scaling-stroke" />
           ))}
         </svg>
-        {CITIES.map((c, i) => (
-          <span
-            key={c.name}
-            className={`map-pin side-${c.side} ${c.office ? "hq" : ""}`}
-            style={{ left: `${c.x}%`, top: `${c.y}%`, "--i": i } as React.CSSProperties}
-          >
-            <i />
-            <b>{c.name}</b>
-          </span>
-        ))}
-        <small className="map-note">Diagram, not to scale</small>
-      </div>
+        {CITIES.map((c, i) => {
+          const store = storeForLabel(c.name, stores);
+          const props = {
+            className: `map-pin side-${c.side} ${c.office ? "hq" : ""}`,
+            style: { left: `${c.x}%`, top: `${c.y}%`, "--i": i } as React.CSSProperties,
+          };
+          const inner = (
+            <>
+              <i aria-hidden />
+              <b>{c.name}</b>
+            </>
+          );
+          // A label the owner typed that matches no showroom stays a plain marker.
+          return store ? (
+            <Link key={c.name} href={`/stores/${store.slug}`} {...props} aria-label={`${c.name}: open showroom page`}>
+              {inner}
+            </Link>
+          ) : (
+            <span key={c.name} {...props}>
+              {inner}
+            </span>
+          );
+        })}
+        <small className="map-note">Diagram, not to scale · tap a place</small>
+      </nav>
     </section>
   );
 }

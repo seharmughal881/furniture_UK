@@ -122,7 +122,7 @@ export default async function Home() {
         </section>
       )}
 
-      <RecentlyViewed index={products} />
+      <RecentlyViewed />
       <ShowroomMap />
       {teaser.enabled && <PlannerTeaser copy={teaser} />}
       <Footer />

@@ -25,6 +25,8 @@ export type Product = {
   rating: number | null;
   reviewCount: number;
   images: string[];
+  /** The product's video, set in the admin. "" when it has none -- see the media tabs. */
+  videoUrl: string;
   inStock: boolean;
   featured: boolean;
   colour: string;
@@ -69,16 +71,32 @@ export type CartLine = {
   id: number;
   slug: string;
   name: string;
+  /** Arabic name, "" when the product has none; shown under the English one at checkout. */
+  nameAr: string;
   kind: FurnitureKind | null;
   image: string | null;
   variant: string;
   unitPriceCents: number;
+  /** The "was" price for this exact line, or null when it is not on offer. */
+  compareAtCents: number | null;
   quantity: number;
   config: { fabric: string; wood: string; metal: string };
   leadTimeWeeks: number;
 };
 
-export type Cart = { lines: CartLine[]; count: number; subtotalCents: number };
+/** savingsCents is what the was-prices add up to against what is actually charged. */
+export type Cart = { lines: CartLine[]; count: number; subtotalCents: number; savingsCents: number };
+
+/**
+ * One definition of the saving, so the server's figure and the basket's optimistic
+ * figure can never drift apart. A line only counts when its was-price is genuinely
+ * above what is being charged.
+ */
+export const cartSavings = (lines: Pick<CartLine, "compareAtCents" | "unitPriceCents" | "quantity">[]) =>
+  lines.reduce(
+    (n, l) => n + (l.compareAtCents && l.compareAtCents > l.unitPriceCents ? (l.compareAtCents - l.unitPriceCents) * l.quantity : 0),
+    0,
+  );
 
 export type MaterialRole = "fabric" | "wood" | "metal";
 

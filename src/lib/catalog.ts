@@ -6,7 +6,7 @@ import type { Material, Product, ProductSummary, Review, Store } from "./types";
 const PRODUCT_COLUMNS = `id, slug, name, kind, tagline, description, price_cents AS "priceCents",
   lead_time_weeks AS "leadTimeWeeks", width_cm AS "widthCm", depth_cm AS "depthCm", height_cm AS "heightCm",
   category, rooms, details, care, name_ar AS "nameAr", images, compare_at_cents AS "compareAtCents",
-  in_stock AS "inStock", featured, colour, sku, variants,
+  in_stock AS "inStock", featured, colour, sku, variants, video_url AS "videoUrl",
   -- Only approved reviews count towards the shown rating. Without this filter an
   -- unmoderated submission would move the star rating (and the aggregateRating that
   -- search engines read) the instant a stranger posted it.

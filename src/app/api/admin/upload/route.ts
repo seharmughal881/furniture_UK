@@ -24,6 +24,11 @@ const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
 // files end up in an <img src> on the public storefront.
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/avif"];
 
+// Videos, kept to the two formats every browser plays. A video is far larger than a
+// photo, so it gets its own ceiling rather than widening the photo limit for everyone.
+const ALLOWED_VIDEO_TYPES = ["video/mp4", "video/webm"];
+const MAX_VIDEO_BYTES = 64 * 1024 * 1024;
+
 const UPLOAD_LIMIT = 120;
 const UPLOAD_WINDOW_SECONDS = 60 * 60;
 
@@ -55,9 +60,12 @@ export async function POST(request: Request): Promise<Response> {
     const result = await handleUpload({
       body,
       request,
-      onBeforeGenerateToken: async () => ({
-        allowedContentTypes: ALLOWED_TYPES,
-        maximumSizeInBytes: MAX_UPLOAD_BYTES,
+      // The client says which kind of file it is about to send. That only ever chooses
+      // between two fixed allow-lists -- it can never name a type of its own -- and the
+      // choice is baked into the token Blob issues, so the limits hold server-side.
+      onBeforeGenerateToken: async (_pathname, clientPayload) => ({
+        allowedContentTypes: clientPayload === "video" ? ALLOWED_VIDEO_TYPES : ALLOWED_TYPES,
+        maximumSizeInBytes: clientPayload === "video" ? MAX_VIDEO_BYTES : MAX_UPLOAD_BYTES,
         // Two people uploading "sofa.jpg" must not overwrite each other, and a replaced
         // photo must get a new URL or the old one lingers in browser and CDN caches.
         addRandomSuffix: true,

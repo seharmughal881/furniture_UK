@@ -200,6 +200,7 @@ export type ProductEdit = {
   heightCm: number | null;
   leadTimeWeeks: number | null;
   images: string[];
+  videoUrl: string;
   variants: ProductVariant[];
   unitsSold: number;
   modelStatus: string | null;
@@ -217,7 +218,7 @@ export async function getProductForEdit(id: number): Promise<ProductEdit | null>
             p.stock_qty AS "stockQty", p.in_stock AS "inStock", p.featured, p.active,
             p.sku, p.vendor, p.colour,
             p.width_cm AS "widthCm", p.depth_cm AS "depthCm", p.height_cm AS "heightCm",
-            p.lead_time_weeks AS "leadTimeWeeks", p.images, p.variants,
+            p.lead_time_weeks AS "leadTimeWeeks", p.images, p.video_url AS "videoUrl", p.variants,
             COALESCE((SELECT sum(i.quantity)::int FROM order_items i
                        JOIN orders o ON o.id = i.order_id
                       WHERE i.product_id = p.id
@@ -274,6 +275,7 @@ const FIELDS = [
   ["height_cm", (i: ProductFormInput) => i.heightCm],
   ["lead_time_weeks", (i: ProductFormInput) => i.leadTimeWeeks ?? 6],
   ["images", (i: ProductFormInput) => i.images],
+  ["video_url", (i: ProductFormInput) => i.videoUrl],
   ["variants", (i: ProductFormInput) => JSON.stringify(i.variants)],
 ] as const;
 

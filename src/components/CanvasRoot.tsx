@@ -1,10 +1,11 @@
 "use client";
 
-import { PerformanceMonitor, View } from "@react-three/drei";
-import { Canvas } from "@react-three/fiber";
 import Lenis from "lenis";
+import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
-import * as THREE from "three";
+
+// three.js loads after the page, not with it -- see GLCanvas.
+const GLCanvas = dynamic(() => import("./GLCanvas"), { ssr: false });
 
 /**
  * One fixed, transparent WebGL canvas for the whole site. Every 3D viewport on
@@ -13,8 +14,6 @@ import * as THREE from "three";
  */
 export function CanvasRoot({ children }: { children: React.ReactNode }) {
   const root = useRef<HTMLDivElement>(null!);
-  // drop resolution on slow GPUs, raise it again when frames recover
-  const [dpr, setDpr] = useState(1.5);
   const [webgl] = useState(() => {
     if (typeof document === "undefined") return true;
     try {
@@ -47,27 +46,7 @@ export function CanvasRoot({ children }: { children: React.ReactNode }) {
           Your browser has 3D graphics turned off, so pieces are shown without their live previews.
         </p>
       )}
-      {webgl && (
-      <Canvas
-        className="gl-canvas"
-        eventSource={root}
-        shadows={{ type: THREE.PCFShadowMap }}
-        dpr={dpr}
-        gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
-        onCreated={({ gl }) => {
-          gl.toneMapping = THREE.ACESFilmicToneMapping;
-          gl.toneMappingExposure = 1.05;
-        }}
-      >
-        <PerformanceMonitor
-          onIncline={() => setDpr(Math.min(2, window.devicePixelRatio))}
-          onDecline={() => setDpr(1)}
-          flipflops={3}
-          onFallback={() => setDpr(1)}
-        />
-        <View.Port />
-      </Canvas>
-      )}
+      {webgl && <GLCanvas eventSource={root} />}
     </div>
   );
 }

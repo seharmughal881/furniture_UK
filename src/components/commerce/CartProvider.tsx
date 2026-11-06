@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import type { Cart, Material } from "@/lib/types";
+import { cartSavings, type Cart, type Material } from "@/lib/types";
 
 export type AddItem = {
   productSlug: string;
@@ -24,7 +24,7 @@ type CartCtx = {
   materialHex: (slug: string) => string | null;
 };
 
-const EMPTY: Cart = { lines: [], count: 0, subtotalCents: 0 };
+const EMPTY: Cart = { lines: [], count: 0, subtotalCents: 0, savingsCents: 0 };
 
 type FlyFrom = { from?: Element | null; image?: string | null };
 
@@ -112,6 +112,7 @@ export function CartProvider({ materials, children }: { materials: Material[]; c
         lines,
         count: lines.reduce((n, l) => n + l.quantity, 0),
         subtotalCents: lines.reduce((n, l) => n + l.quantity * l.unitPriceCents, 0),
+        savingsCents: cartSavings(lines),
       };
     });
     const res = await fetch(`/api/cart/items/${lineId}`, {

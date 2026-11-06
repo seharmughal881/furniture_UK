@@ -97,7 +97,7 @@ async function Product({ params }: { params: PageProps<"/product/[slug]">["param
           <ProductGrid products={related} />
         </section>
       )}
-      <RecentlyViewed index={index} current={product.slug} />
+      <RecentlyViewed current={product.slug} />
     </>
   );
 }

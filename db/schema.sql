@@ -384,3 +384,9 @@ CREATE TABLE IF NOT EXISTS site_content (
   updated_by   INTEGER REFERENCES admin_users(id) ON DELETE SET NULL,
   updater_name TEXT NOT NULL DEFAULT ''
 );
+
+-- ---------------------------------------------------------------- v11: product video
+-- One optional video per product, set by the admin (uploaded, or an address pasted in).
+-- Empty string, never NULL, so the storefront's "does this product have a video?" test is
+-- a plain truthiness check and never has to worry about three states.
+ALTER TABLE products ADD COLUMN IF NOT EXISTS video_url TEXT NOT NULL DEFAULT '';

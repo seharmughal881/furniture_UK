@@ -3,7 +3,7 @@
 import { Html, OrbitControls, PerspectiveCamera, View } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { useCart } from "@/components/commerce/CartProvider";
@@ -19,8 +19,10 @@ import { AiModel, useAiModel } from "@/three/AiModel";
 /** How furniture is drawn: AI-generated 3D of the real product, its cut-out photo, or simple 3D shapes. */
 export type DisplayMode = "ai" | "photo" | "simple";
 
-// The free AI 3D models (Colab/TripoSR) look rough, so they are switched off; set true to offer them again.
-const AI_MODELS = false;
+// The free AI 3D models (Colab/TripoSR) look rough, which is why this was off. All 182 of
+// them are now imported and 'ready' in product_models, so the mode costs nothing to show
+// and nobody waits for generation. Set back to false to hide it again.
+const AI_MODELS = true;
 import { compositionFootprint, compositionFor } from "@/three/sets";
 import { HEIGHT } from "@/three/furniture";
 import { getProceduralTextures } from "@/three/materials";
@@ -38,6 +40,167 @@ const GROUPS = [
   { key: "other", name: "Other" },
 ];
 const groupOf = (p: ProductSummary) => (["living", "bedroom", "dining"].includes(p.rooms[0]) ? p.rooms[0] : "other");
+
+/* ------------------------------------------------------- resizable side panel */
+
+/**
+ * Panel width limits in px. The floor is the narrowest that still fits two piece cards
+ * even on a platform with classic 17px scrollbars -- measured, not guessed: the piece grid
+ * gets the panel width less 44px of padding and the scrollbar.
+ */
+const SIDE_W = { min: 300, max: 560, initial: 340 };
+const SIDE_W_KEY = "planner:side-width";
+
+/** Never let the panel take more than half the window, however wide SIDE_W.max is. */
+const maxSideWidth = () => Math.min(SIDE_W.max, Math.round(window.innerWidth / 2));
+const clampSideWidth = (px: number) => Math.min(maxSideWidth(), Math.max(SIDE_W.min, Math.round(px)));
+
+/** Put the width on the element. This is what actually moves the panel; see globals.css. */
+const applyWidth = (planner: HTMLElement | null, px: number) =>
+  planner?.style.setProperty("--planner-side-w", `${px}px`);
+
+/**
+ * The width lives outside React.
+ *
+ * Two reasons. It has to be read from localStorage on the first client render without the
+ * server and the client disagreeing -- getServerSnapshot hands back the default, so the
+ * restored value arrives on the re-render instead of corrupting hydration. And a drag
+ * writes the live value straight to the DOM, so nothing here is touched until the pointer
+ * is released.
+ */
+const sideWidthStore = (() => {
+  let value = SIDE_W.initial;
+  let loaded = false;
+  const listeners = new Set<() => void>();
+  return {
+    /** Cached, as getSnapshot must return a stable value between changes. */
+    get() {
+      if (!loaded) {
+        loaded = true;
+        try {
+          const saved = Number(localStorage.getItem(SIDE_W_KEY));
+          if (Number.isFinite(saved) && saved > 0) value = clampSideWidth(saved);
+        } catch {
+          // private mode: keep the default
+        }
+      }
+      return value;
+    },
+    getOnServer: () => SIDE_W.initial,
+    set(px: number) {
+      if (px === value) return;
+      value = px;
+      try {
+        localStorage.setItem(SIDE_W_KEY, String(px));
+      } catch {
+        // storage full or blocked: the panel still resized, it just won't be remembered
+      }
+      for (const l of listeners) l();
+    },
+    subscribe(l: () => void) {
+      listeners.add(l);
+      return () => {
+        listeners.delete(l);
+      };
+    },
+  };
+})();
+
+/**
+ * Drag-to-resize for the left panel.
+ *
+ * A drag writes straight to the CSS custom property through the DOM. Routing every
+ * pointermove through setState would re-render this component -- and with it the whole 3D
+ * room -- on every frame of the drag; this way a drag costs the browser one grid
+ * recalculation, and the store is updated once, on release.
+ *
+ * Nothing has to be told about the new size: drei's <View> re-reads its element's bounding
+ * box every frame, so the room follows the stage on its own.
+ *
+ * There is no breakpoint check here. Under 960px the planner stacks and the handle is
+ * display:none, which also takes it out of the tab order -- so the layout decides whether
+ * resizing is on offer, in the one place that already owns that breakpoint.
+ */
+function useSideResize(plannerRef: React.RefObject<HTMLElement | null>) {
+  const width = useSyncExternalStore(sideWidthStore.subscribe, sideWidthStore.get, sideWidthStore.getOnServer);
+  const [dragging, setDragging] = useState(false);
+
+  const commit = useCallback((planner: HTMLElement | null, px: number) => {
+    applyWidth(planner, px);
+    sideWidthStore.set(px);
+  }, []);
+
+  // Push the restored width onto the element; the CSS default covers the first paint.
+  useEffect(() => {
+    applyWidth(plannerRef.current, width);
+  }, [plannerRef, width]);
+
+  // A narrower window lowers the ceiling, so pull an over-wide panel back inside it.
+  useEffect(() => {
+    const onResize = () => {
+      const next = clampSideWidth(width);
+      if (next !== width) commit(plannerRef.current, next);
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [commit, plannerRef, width]);
+
+  const onPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    const planner = e.currentTarget.closest<HTMLElement>(".planner");
+    if (!planner) return;
+    e.preventDefault();
+    // Capture, so the pointer keeps reporting to the handle even once it has travelled
+    // over the canvas -- which would otherwise hand the drag to OrbitControls.
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const originX = planner.getBoundingClientRect().left;
+    // Local to this one drag, so the live value needs no ref and no state.
+    let latest = clampSideWidth(sideWidthStore.get());
+    setDragging(true);
+    document.body.classList.add("planner-resizing");
+
+    const move = (ev: PointerEvent) => {
+      latest = clampSideWidth(ev.clientX - originX);
+      applyWidth(planner, latest);
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      document.body.classList.remove("planner-resizing");
+      setDragging(false);
+      applyWidth(planner, latest);
+      sideWidthStore.set(latest);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+  }, []);
+
+  /** Arrow keys resize, Shift coarsens the step, Home/End jump to the limits. */
+  const onKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      const step = e.shiftKey ? 48 : 16;
+      let next: number | null = null;
+      if (e.key === "ArrowLeft") next = width - step;
+      else if (e.key === "ArrowRight") next = width + step;
+      else if (e.key === "Home") next = SIDE_W.min;
+      else if (e.key === "End") next = maxSideWidth();
+      else if (e.key === "Enter" || e.key === " ") next = SIDE_W.initial;
+      if (next === null) return;
+      e.preventDefault();
+      commit(e.currentTarget.closest<HTMLElement>(".planner"), clampSideWidth(next));
+    },
+    [commit, width],
+  );
+
+  const onDoubleClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => commit(e.currentTarget.closest<HTMLElement>(".planner"), SIDE_W.initial),
+    [commit],
+  );
+
+  return { width, dragging, onPointerDown, onKeyDown, onDoubleClick };
+}
 
 /**
  * Edit tokens for rooms saved from this browser.
@@ -447,6 +610,9 @@ export function Planner({ products }: { products: ProductSummary[] }) {
   const params = useSearchParams();
   const roomParam = params.get("room");
 
+  const plannerRef = useRef<HTMLElement>(null);
+  const side = useSideResize(plannerRef);
+
   const startPreset = params.get("preset") ?? "living";
   const defaults = useMemo(() => defaultsByKind(products), [products]);
   const [items, setItems] = useState<RoomItem[]>(() => presetItems(startPreset, defaults));
@@ -644,7 +810,7 @@ export function Planner({ products }: { products: ProductSummary[] }) {
   }
 
   return (
-    <main className="planner">
+    <main className="planner" ref={plannerRef} data-resizing={side.dragging ? "" : undefined}>
       {/* data-lenis-prevent: let this panel scroll natively instead of the page's smooth scroll */}
       <aside className="planner-side" data-lenis-prevent>
         <div>
@@ -728,10 +894,13 @@ export function Planner({ products }: { products: ProductSummary[] }) {
                 <div className="palette-list">
                   {list.map((p) => (
                     <button key={p.slug} className="palette-item" onClick={() => add(p)}>
-                      {p.image && <img src={shopifyImage(p.image, 120)} alt="" loading="lazy" />}
-                      {p.name}
+                      {/* 300px: a card is ~250px wide at the widest panel, and ~140px at the
+                          default, so this still looks sharp on a 2x screen. */}
+                      {p.image && <img src={shopifyImage(p.image, 300)} alt="" loading="lazy" />}
+                      <span className="palette-name">{p.name}</span>
                       <small>
-                        {p.kind ? KIND_LABEL[p.kind] : ""} · {formatPrice(p.priceCents)}
+                        <span className="palette-kind">{p.kind ? KIND_LABEL[p.kind] : ""}</span>
+                        <b>{formatPrice(p.priceCents)}</b>
                       </small>
                     </button>
                   ))}
@@ -766,6 +935,22 @@ export function Planner({ products }: { products: ProductSummary[] }) {
           return msg && <p className="hint">{msg}</p>;
         })()}
       </aside>
+
+      {/* Hidden by CSS on the stacked layout, which also drops it out of the tab order. */}
+      <div
+        className="planner-resizer"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Panel width"
+        aria-valuenow={side.width}
+        aria-valuemin={SIDE_W.min}
+        aria-valuemax={SIDE_W.max}
+        tabIndex={0}
+        title="Drag to resize \u00b7 double-click to reset"
+        onPointerDown={side.onPointerDown}
+        onKeyDown={side.onKeyDown}
+        onDoubleClick={side.onDoubleClick}
+      />
 
       <div className="planner-stage" ref={setTrack} data-lenis-prevent>
         <View style={{ position: "absolute", inset: 0 }}>

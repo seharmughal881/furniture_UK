@@ -5,6 +5,7 @@ import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { saveProductAction, type ProductSaveState } from "../actions";
 import { ImageManager } from "./ImageManager";
+import { VideoManager } from "./VideoManager";
 import { VariantEditor, type VariantDraft } from "./VariantEditor";
 import type { ProductEdit } from "@/lib/admin/products";
 import { CATEGORIES, ROOMS } from "@/lib/catalog-data";
@@ -256,6 +257,12 @@ export function ProductForm({
         <h2>Photos</h2>
         <ImageManager name="images" initial={product?.images ?? []} uploadsEnabled={uploadsEnabled} />
         {err("images")}
+      </section>
+
+      <section className="adm-card adm-pad">
+        <h2>Video</h2>
+        <VideoManager name="videoUrl" initial={product?.videoUrl ?? ""} uploadsEnabled={uploadsEnabled} />
+        {err("videoUrl")}
       </section>
 
       <section className="adm-card adm-pad">

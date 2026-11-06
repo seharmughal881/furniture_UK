@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { Footer } from "@/components/Footer";
 import { ProductGrid } from "@/components/shop/ProductCard";
 import { CategoryReel } from "@/components/shop/CategoryReel";
+import { GridDensity } from "@/components/shop/GridDensity";
 import { ShopSpotlight } from "@/components/shop/ShopSpotlight";
 import { getProductIndex } from "@/lib/catalog";
 import { CATEGORIES, ROOMS } from "@/lib/catalog-data";
@@ -196,6 +197,7 @@ async function Results({ searchParams }: { searchParams: PageProps<"/shop">["sea
                 ))}
               </div>
             </details>
+            <GridDensity />
           </div>
         </div>
       </div>

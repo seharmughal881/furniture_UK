@@ -12,6 +12,14 @@ function pickQuality(): "sd" | "hd" | null {
 }
 
 const noSubscribe = () => () => {};
+
+// The video (a few MB) waits until the page has finished loading, so it never competes
+// with the product photos and code the shopper is waiting for. Until then: the still.
+const onPageLoad = (done: () => void) => {
+  window.addEventListener("load", done);
+  return () => window.removeEventListener("load", done);
+};
+const pageLoaded = () => document.readyState === "complete";
 const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /**
@@ -22,7 +30,9 @@ const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)"
 export function CategoryReel({ videos }: { videos: CategoryVideo[] }) {
   const [i, setI] = useState(0);
   // browser-only settings; the server (and first paint) shows the still image
+  const loaded = useSyncExternalStore(onPageLoad, pageLoaded, () => false);
   const quality = useSyncExternalStore(noSubscribe, pickQuality, () => undefined);
+  const videoQuality = loaded ? quality : null;
   const reduced = useSyncExternalStore(noSubscribe, reducedMotion, () => true);
   const [userPaused, setPaused] = useState<boolean | null>(null);
   const paused = userPaused ?? reduced;
@@ -40,7 +50,7 @@ export function CategoryReel({ videos }: { videos: CategoryVideo[] }) {
     });
     io.observe(el);
     return () => io.disconnect();
-  }, [paused, i, quality]);
+  }, [paused, i, videoQuality]);
 
   if (!videos.length) return null;
   const cur = videos[i % videos.length];
@@ -54,10 +64,10 @@ export function CategoryReel({ videos }: { videos: CategoryVideo[] }) {
         </div>
       )}
       <div className="reel-card front" key={cur.slug}>
-        {quality ? (
+        {videoQuality ? (
           <video
             ref={video}
-            src={cur[quality]}
+            src={cur[videoQuality]}
             poster={cur.poster}
             muted
             playsInline
@@ -70,7 +80,7 @@ export function CategoryReel({ videos }: { videos: CategoryVideo[] }) {
         ) : (
           <img src={cur.poster} alt={cur.name} />
         )}
-        {quality && (
+        {videoQuality && (
           <button
             className="reel-toggle"
             aria-label={paused ? "Play video" : "Pause video"}

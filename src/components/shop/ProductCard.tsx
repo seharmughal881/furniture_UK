@@ -7,7 +7,7 @@ import { CardActions } from "./CardActions";
 
 export { shopifyImage };
 
-/** Photo product card for the real catalogue; a second photo shows on hover. */
+/** Photo product card for the real catalogue. */
 export function ProductCard({
   product,
   priority = false,
@@ -24,21 +24,16 @@ export function ProductCard({
     <Link href={`/product/${product.slug}`} className="card photo-card">
       <div className="card-photo">
         {product.image ? (
-          <>
-            <ViewTransition name={morph ? `photo-${product.slug}` : undefined}>
-              <img
+          <ViewTransition name={morph ? `photo-${product.slug}` : undefined}>
+            <img
               src={shopifyImage(product.image, 800)}
               srcSet={`${shopifyImage(product.image, 400)} 400w, ${shopifyImage(product.image, 800)} 800w`}
               sizes="(max-width: 700px) 100vw, 33vw"
               alt={product.name}
               loading={priority ? "eager" : "lazy"}
               decoding="async"
-              />
-            </ViewTransition>
-            {product.image2 && (
-              <img className="alt" src={shopifyImage(product.image2, 800)} alt="" loading="lazy" decoding="async" fetchPriority="low" />
-            )}
-          </>
+            />
+          </ViewTransition>
         ) : (
           <div className="no-photo">No photo</div>
         )}

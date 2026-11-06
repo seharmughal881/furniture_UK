@@ -2,7 +2,7 @@ import "server-only";
 import { cookies } from "next/headers";
 import type { PoolClient } from "pg";
 import { pool } from "./db";
-import type { Cart } from "./types";
+import { cartSavings, type Cart } from "./types";
 import { isUuid } from "./validation";
 
 const COOKIE = "atelier_cart";
@@ -36,11 +36,21 @@ export async function clearCartCookie() {
 
 /** Cart contents with prices always taken from the products table. */
 export async function readCart(cartId: string | null, db: PoolClient | typeof pool = pool): Promise<Cart> {
-  if (!cartId) return { lines: [], count: 0, subtotalCents: 0 };
+  if (!cartId) return { lines: [], count: 0, subtotalCents: 0, savingsCents: 0 };
   const { rows } = await db.query(
-    `SELECT ci.id, p.id AS "productId", p.slug, p.name, p.kind, p.images[1] AS image, ci.variant,
+    `SELECT ci.id, p.id AS "productId", p.slug, p.name, p.name_ar AS "nameAr", p.kind,
+            p.images[1] AS image, ci.variant,
             COALESCE((SELECT (v->>'price_cents')::int FROM jsonb_array_elements(p.variants) v
                       WHERE v->>'title' = ci.variant AND ci.variant <> '' LIMIT 1), p.price_cents) AS "unitPriceCents",
+            -- The was-price must come from the SAME place as the price above, so the saving
+            -- shown at checkout is real. A variant that exists but carries no compare_at is
+            -- simply not on offer, so it must NOT fall back to the product's was-price.
+            CASE WHEN ci.variant <> ''
+                  AND EXISTS (SELECT 1 FROM jsonb_array_elements(p.variants) v WHERE v->>'title' = ci.variant)
+                 THEN (SELECT (v->>'compare_at_cents')::int FROM jsonb_array_elements(p.variants) v
+                       WHERE v->>'title' = ci.variant LIMIT 1)
+                 ELSE p.compare_at_cents
+            END AS "compareAtCents",
             p.lead_time_weeks AS "leadTimeWeeks", ci.quantity,
             json_build_object('fabric', ci.fabric, 'wood', ci.wood, 'metal', ci.metal) AS config
      FROM cart_items ci JOIN products p ON p.id = ci.product_id
@@ -51,5 +61,6 @@ export async function readCart(cartId: string | null, db: PoolClient | typeof po
     lines: rows,
     count: rows.reduce((n, r) => n + r.quantity, 0),
     subtotalCents: rows.reduce((n, r) => n + r.quantity * r.unitPriceCents, 0),
+    savingsCents: cartSavings(rows),
   };
 }

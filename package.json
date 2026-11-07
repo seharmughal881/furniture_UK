@@ -19,7 +19,8 @@
     "models:list": "tsx scripts/models-export-list.ts",
     "models:import": "tsx scripts/models-import.ts",
     "depth:make": "tsx scripts/make-depth.ts",
-    "videos:import": "tsx scripts/import-videos.ts"
+    "videos:import": "tsx scripts/import-videos.ts",
+    "videos:apply": "tsx scripts/videos-apply.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",

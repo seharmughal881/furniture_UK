@@ -13,10 +13,12 @@ import { ADMIN_COOKIE } from "@/lib/admin/cookie";
  * The real check is requireAdmin() in src/lib/admin/session.ts, called by every exported
  * function in src/lib/admin/orders.ts before it reads or writes anything.
  */
+// export const config = {
+//   matcher: ["/admin", "/admin/:path*"],
+// };
 export const config = {
   matcher: ["/admin", "/admin/:path*"],
 };
-
 export default function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 

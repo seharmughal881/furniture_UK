@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "db:setup": "tsx scripts/db-setup.ts",
+    "db:migrate": "tsx scripts/db-migrate.ts",
     "db:cleanup": "tsx scripts/db-cleanup.ts",
     "db:neon-sql": "tsx scripts/db-neon-sql.ts",
     "admin:create": "tsx scripts/admin-create.ts",

@@ -56,6 +56,22 @@ npm run dev                     # http://localhost:3000
 Components must return at least one row — so `npm run build` fails on a database that has
 only had `db:setup`. Requires PostgreSQL 13 or newer.
 
+### Updating an existing database
+
+`db:setup` is for a *fresh* database: it also upserts the 24 demo seed products, which you do
+not want in a live shop. To bring an existing database (Neon, staging) up to the current
+schema and change nothing else:
+
+```bash
+DATABASE_URL="postgres://...neon.tech/..." npm run db:migrate
+```
+
+It applies `db/schema.sql` in one transaction, is safe to re-run, and seeds nothing. Run it
+after every pull that touches `db/schema.sql` — a database missing a newer column fails at
+runtime with Postgres error `42703` (for example `column "video_url" does not exist`), while
+the build itself still succeeds, because the build only type-checks the query, never runs it
+against your deployed database.
+
 Housekeeping: `npm run db:cleanup` drops expired rate-limit buckets and sessions, abandoned
 baskets and unconfirmed newsletter sign-ups. Run it on a daily schedule in production.
 

@@ -16,6 +16,9 @@ import { ADMIN_COOKIE } from "@/lib/admin/cookie";
 // export const config = {
 //   matcher: ["/admin", "/admin/:path*"],
 // };
+// export const config = {
+//   matcher: ["/admin", "/admin/:path*"],
+// };
 export const config = {
   matcher: ["/admin", "/admin/:path*"],
 };

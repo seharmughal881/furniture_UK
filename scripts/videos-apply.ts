@@ -27,7 +27,23 @@ if (!process.env.DATABASE_URL) {
 const force = process.argv.includes("--force");
 type Clip = { sd: string; hd: string; poster: string; seconds: number };
 
+/**
+ * Say which database is being written to, host only, never the password.
+ *
+ * Without this the output is ambiguous: "already had one: 52" looks identical whether it
+ * ran against production or fell back to .env.local because DATABASE_URL was not exported.
+ */
+const target = (() => {
+  try {
+    const u = new URL(process.env.DATABASE_URL!);
+    return `${u.host}${u.pathname}`;
+  } catch {
+    return "(unparseable DATABASE_URL)";
+  }
+})();
+
 async function main() {
+  console.log(`\nTarget database: ${target}`);
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   const entries = Object.entries(videos as Record<string, Clip>);
   let filled = 0;

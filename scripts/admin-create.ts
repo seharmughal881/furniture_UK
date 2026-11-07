@@ -36,7 +36,24 @@ if (role !== "staff" && role !== "manager") {
 /** Readable but strong: 24 base64url characters, ~144 bits. */
 const generatePassword = () => randomBytes(18).toString("base64url");
 
+/**
+ * Say which database the account is being created in, host only, never the password.
+ *
+ * Without this the output is ambiguous: "Created manager account" looks identical whether
+ * it ran against production or fell back to .env.local because DATABASE_URL was not
+ * exported -- and an admin account created in the wrong database simply cannot sign in.
+ */
+const target = (() => {
+  try {
+    const u = new URL(process.env.DATABASE_URL!);
+    return `${u.host}${u.pathname}`;
+  } catch {
+    return "(unparseable DATABASE_URL)";
+  }
+})();
+
 async function main() {
+  console.log(`\nTarget database: ${target}`);
   const chosen = process.env.ADMIN_PASSWORD;
   if (chosen && chosen.length < 12) {
     console.error("ADMIN_PASSWORD must be at least 12 characters.");

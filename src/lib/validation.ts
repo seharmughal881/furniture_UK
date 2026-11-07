@@ -194,7 +194,21 @@ export const productSlugSchema = z
  */
 export const productVariantSchema = z
   .object({
-    title: z.string().trim().min(1, "Every option needs a name").max(120),
+    /**
+     * May be empty, and usually is: an empty title is how this catalogue says "this
+     * product has no options, the row is just the product itself". The storefront is
+     * built on that convention -- ProductExperience lists options with
+     * `variants.filter((v) => v.title)` and catalog.ts derives hasOptions from
+     * `count(*) ... WHERE v->>'title' <> '' > 1` -- and import-muscat.ts maps Shopify's
+     * "Default Title" to "" for exactly this reason.
+     *
+     * Requiring a name here therefore rejected 479 of the 632 imported products: the
+     * admin form loaded them fine and then refused every save with "Please check the
+     * highlighted fields", so no product could be edited at all. A name is still
+     * required once a product has more than one option -- see productFormSchema's
+     * refinement below, where that can actually be checked.
+     */
+    title: z.string().trim().max(120),
     price: moneyRequired("Option price"),
     compareAt: moneyOptional("Option was-price"),
     available: z.preprocess((v) => v === true || v === "on" || v === "true", z.boolean()),
@@ -239,7 +253,24 @@ export const productFormSchema = z.object({
   images: z.array(imageUrlSchema).max(12).default([]),
   videoUrl: videoUrlSchema,
   variants: z.array(productVariantSchema).max(40).default([]),
-});
+})
+  /**
+   * One unnamed option is the product itself; two or more need telling apart. An unnamed
+   * option among several would also be unreachable on the storefront, because the picker
+   * filters options by title.
+   */
+  .superRefine((input, ctx) => {
+    if (input.variants.length < 2) return;
+    input.variants.forEach((variant, i) => {
+      if (variant.title === "") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["variants", i, "title"],
+          message: "Every option needs a name once a product has more than one",
+        });
+      }
+    });
+  });
 
 export type ProductFormInput = z.infer<typeof productFormSchema>;
 

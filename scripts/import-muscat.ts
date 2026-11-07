@@ -172,8 +172,12 @@ function uniqueSlug(handle: string, name: string, id: number) {
       .toLowerCase()
       .normalize("NFKD")
       .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 80);
+      // Trim AFTER the slice, not before: cutting an 80-character handle lands mid-word
+      // often enough, and when it lands on a "-" the slug ends in one. productSlugSchema
+      // rejects that, so the admin form loaded those products and then refused every
+      // save -- a product the importer itself created could not be edited.
+      .slice(0, 80)
+      .replace(/^-+|-+$/g, "");
   const base = clean(handle) || clean(name) || `product-${id}`;
   let slug = base;
   for (let n = 2; usedSlugs.has(slug) && usedSlugs.get(slug) !== id; n++) slug = `${base}-${n}`;
@@ -223,7 +227,11 @@ async function main() {
       const details = description
         .split("\n")
         .filter((l) => l.startsWith("• ") || /^[A-Za-z ]{2,30}:\s/.test(l))
-        .map((l) => l.replace(/^• /, ""))
+        // Capped at the 300 characters productFormSchema allows per bullet. A handful of
+        // Shopify descriptions have a whole paragraph on one line that the filter above
+        // reads as a bullet; left at full length the admin form could never save that
+        // product. Nothing is lost -- the full text is kept in `description`.
+        .map((l) => l.replace(/^• /, "").slice(0, 300))
         .slice(0, 10);
       const featured = inCol("most-selling") || inCol("new-arrivals-1");
       const slug = uniqueSlug(p.handle, en, p.id);

@@ -64,7 +64,8 @@ async function main() {
       else {
         // Either no such product, or it already has a video and --force was not passed.
         const { rows } = await pool.query(`SELECT 1 FROM products WHERE slug = $1 AND active`, [slug]);
-        rows.length ? skipped++ : unknown++;
+        if (rows.length) skipped++;
+        else unknown++;
       }
     }
 

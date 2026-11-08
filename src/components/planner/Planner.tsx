@@ -26,9 +26,27 @@ const AI_MODELS = true;
 import { compositionFootprint, compositionFor } from "@/three/sets";
 import { HEIGHT } from "@/three/furniture";
 import { getProceduralTextures } from "@/three/materials";
-import { SceneLights } from "@/three/SceneLights";
+import { SceneLights, ShadowFloor } from "@/three/SceneLights";
 
 const ROOM = { w: 6, d: 5 };
+
+/**
+ * How far from the middle a piece may be dragged.
+ *
+ * Pieces used to be clamped to the walls, so a sofa could not be stood outside to compare
+ * two of them side by side, or parked off to one side while the room was rearranged. The
+ * drag already raycasts an infinite ground plane, so only the clamp was in the way.
+ *
+ * This is not an arbitrary apron round the room: it is the limit the saved-room format
+ * already imposes. roomItemSchema in lib/validation.ts accepts x and z within +/-10, so
+ * anywhere a piece can be dragged to is somewhere the layout can still be saved and
+ * shared from. Allowing more would let someone build a room that is silently rejected the
+ * moment they press save.
+ */
+const REACH = 9.8;
+
+/** One press of +/- resizes a piece by 10%. */
+const SCALE_STEP = 1.1;
 const SNAP = 0.05;
 const BASE_PALETTE: Palette = { fabric: "#e8e0d2", wood: "#6b4a33", metal: "#2b2b2b" };
 const paletteFor = (colour?: string): Palette => ({ ...BASE_PALETTE, fabric: colour || BASE_PALETTE.fabric });
@@ -241,8 +259,8 @@ function rememberEditToken(roomId: string, token: string): void {
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const snap = (v: number) => Math.round(v / SNAP) * SNAP;
-const clampX = (v: number) => Math.min(ROOM.w / 2 - 0.2, Math.max(-ROOM.w / 2 + 0.2, v));
-const clampZ = (v: number) => Math.min(ROOM.d / 2 - 0.2, Math.max(-ROOM.d / 2 + 0.2, v));
+const clampX = (v: number) => Math.min(REACH, Math.max(-REACH, v));
+const clampZ = (v: number) => Math.min(REACH, Math.max(-REACH, v));
 
 const PI = Math.PI;
 type Spot = [FurnitureKind, number, number, number?];
@@ -288,6 +306,36 @@ const presetItems = (key: string, defaults: Map<FurnitureKind, ProductSummary>):
     .filter(([kind]) => defaults.has(kind))
     .map(([kind, x, z, rot = 0]) => ({ id: uid(), kind, slug: defaults.get(kind)!.slug, x, z, rot }));
 
+/**
+ * Geometry for a piece that has been turned to an arbitrary angle.
+ *
+ * Both of these replace `Math.round(rot / (PI / 2)) % 2`, which rounded every rotation to
+ * the nearest quarter turn and could only ever swap width for depth. That was true enough
+ * while pieces could only be turned in 45-degree steps and landed square more often than
+ * not, but the turn slider sets any angle: a 2.0 x 1.0 m sofa at 45 degrees covers a
+ * 2.12 x 2.12 m square of floor, and the old code still thought it covered 2.0 x 1.0.
+ * Neither accounted for the piece's own scale either.
+ */
+
+/** Half-extents of the axis-aligned box around a w x d footprint turned by `rot`. */
+function turnedHalfExtents(w: number, d: number, rot: number, scale = 1): [number, number] {
+  const c = Math.abs(Math.cos(rot));
+  const s = Math.abs(Math.sin(rot));
+  return [(scale * (w * c + d * s)) / 2, (scale * (w * s + d * c)) / 2];
+}
+
+/**
+ * A point in the piece's own frame, expressed in the room's.
+ *
+ * Matches three.js's rotation about Y, which the item's <group rotation-y> applies:
+ * x' = x cos + z sin, z' = -x sin + z cos.
+ */
+function turnPoint(x: number, z: number, rot: number, scale = 1): [number, number] {
+  const c = Math.cos(rot);
+  const s = Math.sin(rot);
+  return [scale * (x * c + z * s), scale * (-x * s + z * c)];
+}
+
 /** Height a stackable item (a table lamp) should sit at: the top of any surface it is placed over. */
 function standHeight(it: RoomItem, items: RoomItem[]) {
   if (!STACKABLE.includes(it.kind)) return 0;
@@ -296,10 +344,12 @@ function standHeight(it: RoomItem, items: RoomItem[]) {
     const top = SURFACE[o.kind];
     if (!top || o.id === it.id) continue;
     const [w, d] = FOOTPRINT[o.kind];
-    const quarter = Math.round(o.rot / (PI / 2)) % 2 !== 0; // turned 90°: swap width/depth
-    const hw = (quarter ? d : w) / 2;
-    const hd = (quarter ? w : d) / 2;
-    if (Math.abs(it.x - o.x) <= hw && Math.abs(it.z - o.z) <= hd) y = Math.max(y, top);
+    const scale = o.scale ?? 1;
+    // Turn the lamp's position back into the surface's own frame and compare against the
+    // plain rectangle. Exact at any angle, where a bounding box would lift a lamp that
+    // sits just off the corner of a table standing at 45 degrees.
+    const [lx, lz] = turnPoint(it.x - o.x, it.z - o.z, -o.rot);
+    if (Math.abs(lx) <= (w * scale) / 2 && Math.abs(lz) <= (d * scale) / 2) y = Math.max(y, top * scale);
   }
   return y;
 }
@@ -314,6 +364,18 @@ export const WALLS = [
   { name: "Navy", hex: "#3a4560" },
   { name: "Charcoal", hex: "#3a3a3a" },
 ];
+/**
+ * How much of the room is drawn. "none" leaves the furniture on the page background,
+ * which is what you want to photograph a piece on its own or compare two side by side;
+ * "floor" drops just the walls, which otherwise hide anything stood behind them.
+ */
+export type Shell = "walls" | "floor" | "none";
+export const SHELLS: { key: Shell; name: string }[] = [
+  { key: "walls", name: "Walls & floor" },
+  { key: "floor", name: "Floor only" },
+  { key: "none", name: "No room" },
+];
+
 export const FLOORS = [
   { key: "oak", name: "Light oak", hex: "#d6bd96", wood: true },
   { key: "walnut", name: "Walnut", hex: "#7a5a40", wood: true },
@@ -321,7 +383,7 @@ export const FLOORS = [
   { key: "tile", name: "Grey tile", hex: "#9d9d9b", wood: false },
 ];
 
-function Room({ wall, floor }: { wall: string; floor: string }) {
+function Room({ wall, floor, shell }: { wall: string; floor: string; shell: Shell }) {
   const f = FLOORS.find((x) => x.key === floor) ?? FLOORS[0];
   const floorMap = useMemo(() => {
     const t = getProceduralTextures().wood.clone();
@@ -334,27 +396,45 @@ function Room({ wall, floor }: { wall: string; floor: string }) {
   const side = useMemo(() => "#" + new THREE.Color(wall).multiplyScalar(0.93).getHexString(), [wall]);
   return (
     <group>
-      <mesh rotation-x={-Math.PI / 2} receiveShadow>
-        <planeGeometry args={[ROOM.w, ROOM.d]} />
-        <meshStandardMaterial
-          key={f.key}
-          map={f.wood ? floorMap : null}
-          color={f.hex}
-          roughness={f.wood ? 0.75 : f.key === "marble" ? 0.25 : 0.6}
-        />
-      </mesh>
-      <gridHelper args={[ROOM.w, ROOM.w * 2, "#8a7457", "#8a7457"]} position-y={0.002} scale={[1, 1, ROOM.d / ROOM.w]}>
-        <lineBasicMaterial attach="material" color="#5a4630" transparent opacity={f.wood ? 0.12 : 0.22} />
-      </gridHelper>
+      {/*
+        Ground for everywhere outside the room, so a piece dragged out still casts a
+        shadow and reads as standing on something rather than floating. shadowMaterial
+        draws nothing but the shadow itself, so the page background shows through and the
+        area stays white -- an opaque plane here put a grey field round the room instead.
+        A couple of millimetres below the room floor, which is opaque and covers it.
+      */}
+      <group position-y={-0.002}>
+        <ShadowFloor size={REACH * 2 + ROOM.w} />
+      </group>
+      {shell !== "none" && (
+        <mesh rotation-x={-Math.PI / 2} receiveShadow>
+          <planeGeometry args={[ROOM.w, ROOM.d]} />
+          <meshStandardMaterial
+            key={f.key}
+            map={f.wood ? floorMap : null}
+            color={f.hex}
+            roughness={f.wood ? 0.75 : f.key === "marble" ? 0.25 : 0.6}
+          />
+        </mesh>
+      )}
+      {shell !== "none" && (
+        <gridHelper args={[ROOM.w, ROOM.w * 2, "#8a7457", "#8a7457"]} position-y={0.002} scale={[1, 1, ROOM.d / ROOM.w]}>
+          <lineBasicMaterial attach="material" color="#5a4630" transparent opacity={f.wood ? 0.12 : 0.22} />
+        </gridHelper>
+      )}
       {/* two walls so the light has something to land on */}
-      <mesh position={[0, 1.3, -ROOM.d / 2 - 0.05]} receiveShadow castShadow>
-        <boxGeometry args={[ROOM.w + 0.2, 2.6, 0.1]} />
-        <meshStandardMaterial color={wall} roughness={0.95} />
-      </mesh>
-      <mesh position={[-ROOM.w / 2 - 0.05, 1.3, 0]} receiveShadow castShadow>
-        <boxGeometry args={[0.1, 2.6, ROOM.d]} />
-        <meshStandardMaterial color={side} roughness={0.95} />
-      </mesh>
+      {shell === "walls" && (
+        <>
+          <mesh position={[0, 1.3, -ROOM.d / 2 - 0.05]} receiveShadow castShadow>
+            <boxGeometry args={[ROOM.w + 0.2, 2.6, 0.1]} />
+            <meshStandardMaterial color={wall} roughness={0.95} />
+          </mesh>
+          <mesh position={[-ROOM.w / 2 - 0.05, 1.3, 0]} receiveShadow castShadow>
+            <boxGeometry args={[0.1, 2.6, ROOM.d]} />
+            <meshStandardMaterial color={side} roughness={0.95} />
+          </mesh>
+        </>
+      )}
     </group>
   );
 }
@@ -394,10 +474,21 @@ function PlacedProduct({
   const [w, d, cx, cz] = useMemo(() => compositionFootprint(pieces), [pieces]);
   const palette = look?.palette ?? paletteFor(product?.colour);
   const ai = useAiModel(product?.slug, mode === "ai");
-  // AI 3D model of the actual product when ready; otherwise its cut-out photo (white-background
-  // photos) while it is being made / in photo mode; otherwise simple 3D shapes
+  /*
+   * What to draw: the real 3D model, a cut-out photo, or the procedural shapes.
+   *
+   * "AI 3D" never falls back to a photo. A cut-out is one flat plane kept upright by a
+   * billboard, so it is honest from eye level and collapses to a sliver as soon as the
+   * camera looks down on the room -- and in a mode called "real shape", next to pieces
+   * that are solid from every angle, that reads as broken rather than as a stand-in.
+   * Procedural geometry is a generic shape but it is real geometry, so a room in this
+   * mode now holds up however it is turned and whatever angle it is viewed from.
+   *
+   * "Product photos" is the mode for someone who wants the actual photograph, and keeps
+   * the cut-out; pieces with no usable cut-out still fall through to the shapes.
+   */
   const showAi = mode === "ai" && ai.status === "ready";
-  const showPhoto = !showAi && mode !== "simple" && look?.cutout && info;
+  const showPhoto = mode === "photo" && look?.cutout && info;
   const making = mode === "ai" && ai.status === "queued";
   const tallest = Math.max(...pieces.map((q) => HEIGHT[q.kind]));
 
@@ -405,7 +496,7 @@ function PlacedProduct({
     <>
       {showAi && ai.status === "ready" ? (
         <group position={[cx, 0, cz]}>
-          <AiModel url={ai.url} width={w} height={tallest * 1.05} />
+          <AiModel url={ai.url} width={w} depth={d} height={tallest * 1.05} />
         </group>
       ) : showPhoto ? (
         <group position={[cx, 0, cz]}>
@@ -466,6 +557,7 @@ function PlannerScene({
   mode,
   wall,
   floor,
+  shell,
   selected,
   hour,
   track,
@@ -477,6 +569,7 @@ function PlannerScene({
   mode: DisplayMode;
   wall: string;
   floor: string;
+  shell: Shell;
   selected: string | null;
   hour: number;
   track: HTMLDivElement;
@@ -576,14 +669,18 @@ function PlannerScene({
         minPolarAngle={0.2}
         maxPolarAngle={Math.PI / 2.4}
       />
-      <SceneLights hour={() => hourRef.current} shadowSize={5} />
-      <Room wall={wall} floor={floor} />
+      {/* Covers well past the room: at 5 a piece dragged outside it lost its shadow and
+          looked pasted on. Spreading the same shadow map over more ground softens it, so
+          this is a compromise rather than the full REACH. */}
+      <SceneLights hour={() => hourRef.current} shadowSize={10} />
+      <Room wall={wall} floor={floor} shell={shell} />
       {items.map((it) => {
         return (
           <group
             key={it.id}
             position={[it.x, standHeight(it, items), it.z]}
             rotation-y={it.rot}
+            scale={it.scale ?? 1}
             userData={{ itemId: it.id }}
             ref={(g) => {
               if (g) groups.current.set(it.id, g);
@@ -621,6 +718,7 @@ export function Planner({ products }: { products: ProductSummary[] }) {
   const [wall, setWall] = useState(WALLS[0].hex);
   const [floor, setFloor] = useState(FLOORS[0].key);
   const [mode, setMode] = useState<DisplayMode>("simple");
+  const [shell, setShell] = useState<Shell>("walls");
   const [name, setName] = useState(() => (PRESETS[startPreset] ?? PRESETS.living).name);
   const [roomId, setRoomId] = useState<string | null>(null);
   // Whether this browser holds the edit token for the loaded room, which decides if
@@ -639,6 +737,10 @@ export function Planner({ products }: { products: ProductSummary[] }) {
     [bySlug, defaults],
   );
   const total = items.reduce((s, it) => s + (productOf(it)?.priceCents ?? 0), 0);
+  const selectedItem = items.find((it) => it.id === selected);
+  // rot is free-running radians (each Rotate press subtracts a quarter turn), so bring it
+  // back into 0-359 for the slider rather than letting the handle run off the end.
+  const selectedAngle = ((((selectedItem?.rot ?? 0) * 180) / Math.PI) % 360 + 360) % 360;
 
   // Load a saved room from the URL.
   useEffect(() => {
@@ -654,6 +756,9 @@ export function Planner({ products }: { products: ProductSummary[] }) {
         if (room.style?.floor) setFloor(room.style.floor);
         if (room.style?.mode) setMode(room.style.mode === "ai" && !AI_MODELS ? "simple" : room.style.mode);
         else if (typeof room.style?.photos === "boolean") setMode(room.style.photos ? "photo" : "simple");
+        // Rooms saved before the room could be hidden have no shell: they were all drawn
+        // with walls, so that is what they should come back as.
+        if (room.style?.shell) setShell(room.style.shell);
         setRoomId(room.id);
         // Someone opening a shared link holds no token, so their save becomes a copy.
         setCanEditRoom(Boolean(editTokenFor(room.id)));
@@ -679,12 +784,13 @@ export function Planner({ products }: { products: ProductSummary[] }) {
 
   /** Room-space rectangle an item covers (accounts for sets and rotation). */
   const rectOf = useCallback(
-    (it: { kind: FurnitureKind; x: number; z: number; rot: number }, name?: string) => {
+    (it: { kind: FurnitureKind; x: number; z: number; rot: number; scale?: number }, name?: string) => {
       const [w, d, cx, cz] = compositionFootprint(compositionFor(name ?? "", it.kind));
-      const quarter = Math.round(it.rot / (Math.PI / 2)) % 2 !== 0;
-      const hw = (quarter ? d : w) / 2;
-      const hd = (quarter ? w : d) / 2;
-      return { x0: it.x + cx - hw, x1: it.x + cx + hw, z0: it.z + cz - hd, z1: it.z + cz + hd };
+      const scale = it.scale ?? 1;
+      const [hw, hd] = turnedHalfExtents(w, d, it.rot, scale);
+      // cx/cz are measured inside the piece, so they turn and scale with it.
+      const [ox, oz] = turnPoint(cx, cz, it.rot, scale);
+      return { x0: it.x + ox - hw, x1: it.x + ox + hw, z0: it.z + oz - hd, z1: it.z + oz + hd };
     },
     [],
   );
@@ -734,11 +840,66 @@ export function Planner({ products }: { products: ProductSummary[] }) {
     (id: string | null) => id && setItems((xs) => xs.map((it) => (it.id === id ? { ...it, rot: it.rot - Math.PI / 4 } : it))),
     [],
   );
+  /**
+   * Resize one piece. The catalogue size is only a guess for most products -- 0 of the
+   * 183 placeable ones carry real dimensions, so FOOTPRINT is a generic figure per
+   * furniture type -- and a generated 3D model adds its own error on top. Letting the
+   * owner correct a piece by eye is more honest than pretending the stored size is right.
+   *
+   * Clamped to the range the saved-room format accepts (roomItemSchema.scale), so a piece
+   * can never be resized into a layout that is rejected on save.
+   */
+  const resize = useCallback(
+    (id: string | null, by: number) =>
+      id &&
+      setItems((xs) =>
+        xs.map((it) =>
+          it.id === id ? { ...it, scale: Math.min(4, Math.max(0.25, (it.scale ?? 1) * by)) } : it,
+        ),
+      ),
+    [],
+  );
+  /**
+   * Turn a piece to an exact angle.
+   *
+   * The Rotate button steps 45 degrees, which covers a full circle in eight presses but
+   * can never reach an angle between the steps -- no sofa set at 20 degrees to the wall,
+   * no chair turned slightly towards the room. This takes any angle in the full 360.
+   */
+  const setRotation = useCallback(
+    (id: string | null, degrees: number) =>
+      id && setItems((xs) => xs.map((it) => (it.id === id ? { ...it, rot: (degrees * Math.PI) / 180 } : it))),
+    [],
+  );
   const remove = useCallback((id: string | null) => {
     if (!id) return;
     setItems((xs) => xs.filter((it) => it.id !== id));
     setSelected(null);
   }, []);
+  /**
+   * Empty the room, in two taps.
+   *
+   * This throws away everything the owner arranged and there is no undo, so a single
+   * click is too easy to hit by accident -- the button sits next to Remove, which is a
+   * one-piece action. The second tap is the confirmation; it lapses after a few seconds
+   * so the toolbar never sits in a primed state waiting to catch someone out.
+   */
+  const [confirmEmpty, setConfirmEmpty] = useState(false);
+  useEffect(() => {
+    if (!confirmEmpty) return;
+    const t = setTimeout(() => setConfirmEmpty(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirmEmpty]);
+  const emptyRoom = () => {
+    if (!confirmEmpty) {
+      setConfirmEmpty(true);
+      return;
+    }
+    setItems([]);
+    setSelected(null);
+    setConfirmEmpty(false);
+  };
+
   const duplicate = (id: string | null) => {
     const it = items.find((x) => x.id === id);
     if (!it) return;
@@ -752,11 +913,16 @@ export function Planner({ products }: { products: ProductSummary[] }) {
       if ((e.target as HTMLElement).tagName === "INPUT") return;
       if (e.key === "r" || e.key === "R") rotate(selected);
       if (e.key === "Delete" || e.key === "Backspace") remove(selected);
-      if (e.key === "Escape") setSelected(null);
+      if (e.key === "+" || e.key === "=") resize(selected, SCALE_STEP);
+      if (e.key === "-" || e.key === "_") resize(selected, 1 / SCALE_STEP);
+      if (e.key === "Escape") {
+        setSelected(null);
+        setConfirmEmpty(false);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selected, rotate, remove]);
+  }, [selected, rotate, remove, resize]);
 
   async function addRoomToCart() {
     const counts = new Map<string, number>();
@@ -775,7 +941,7 @@ export function Planner({ products }: { products: ProductSummary[] }) {
 
   async function save() {
     setStatus("Saving…");
-    const body = JSON.stringify({ name, layout: items, style: { wall, floor, mode } });
+    const body = JSON.stringify({ name, layout: items, style: { wall, floor, mode, shell } });
 
     // The edit token proves this browser is the one that saved the room. Only rooms we
     // hold a token for are updated in place; anything else (someone else's shared link,
@@ -838,6 +1004,14 @@ export function Planner({ products }: { products: ProductSummary[] }) {
           </div>
         </div>
         <div className="room-style">
+          <p className="label">Room</p>
+          <div className="chips wrap" role="group" aria-label="Room">
+            {SHELLS.map((o) => (
+              <button key={o.key} className={`chip ${shell === o.key ? "on" : ""}`} onClick={() => setShell(o.key)}>
+                {o.name}
+              </button>
+            ))}
+          </div>
           <p className="label">Wall colour</p>
           <div className="swatch-row" role="group" aria-label="Wall colour">
             {WALLS.map((c) => (
@@ -877,7 +1051,8 @@ export function Planner({ products }: { products: ProductSummary[] }) {
           {AI_MODELS && (
             <p className="hint">
               &ldquo;AI 3D&rdquo; turns each product&apos;s photo into a real 3D model of that exact piece (made once, then
-              instant for everyone). While it is being made you see the product photo or a simple stand-in.
+              instant for everyone). Pieces that do not have one yet are shown as simple 3D shapes, so everything in
+              the room stays solid from every angle. Choose &ldquo;Product photos&rdquo; to see the photographs instead.
             </p>
           )}
         </div>
@@ -910,7 +1085,8 @@ export function Planner({ products }: { products: ProductSummary[] }) {
           })}
         </div>
         <p className="hint">
-          Drag pieces to move them. Drag empty floor to orbit, scroll to zoom. <b>R</b> rotates, <b>Delete</b> removes.
+          Drag pieces to move them, inside the room or outside it. Drag empty floor to orbit, scroll to zoom.{" "}
+          <b>R</b> rotates, <b>+</b>/<b>−</b> resize, <b>Delete</b> removes.
         </p>
         <div className="total">
           <span className="label" style={{ margin: 0 }}>
@@ -961,6 +1137,7 @@ export function Planner({ products }: { products: ProductSummary[] }) {
               mode={mode}
               wall={wall}
               floor={floor}
+              shell={shell}
               selected={selected}
               hour={hour}
               track={track}
@@ -984,13 +1161,44 @@ export function Planner({ products }: { products: ProductSummary[] }) {
           <button disabled={!selected} onClick={() => rotate(selected)}>
             ⟲ Rotate
           </button>
+          <button disabled={!selected} onClick={() => resize(selected, 1 / SCALE_STEP)} aria-label="Make smaller">
+            − Smaller
+          </button>
+          <button disabled={!selected} onClick={() => resize(selected, SCALE_STEP)} aria-label="Make bigger">
+            + Bigger
+          </button>
           <button disabled={!selected} onClick={() => duplicate(selected)}>
             Duplicate
           </button>
           <button disabled={!selected} onClick={() => remove(selected)}>
             Remove
           </button>
+          <button
+            className={confirmEmpty ? "danger" : undefined}
+            disabled={items.length === 0}
+            onClick={emptyRoom}
+          >
+            {confirmEmpty ? `Remove all ${items.length}?` : "Empty room"}
+          </button>
         </div>
+
+        {selectedItem && (
+          <div className="planner-rotate">
+            <div>
+              <span>Turn this piece</span>
+              <span>{Math.round(selectedAngle)}&deg;</span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={359}
+              step={1}
+              value={Math.round(selectedAngle)}
+              aria-label="Turn this piece"
+              onChange={(e) => setRotation(selected, +e.target.value)}
+            />
+          </div>
+        )}
 
         <div className="planner-time">
           <div>

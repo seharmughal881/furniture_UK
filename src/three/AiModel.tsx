@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 
 export type AiState =
   | { status: "ready"; url: string }
@@ -19,8 +20,16 @@ async function fetchState(slug: string, start: boolean): Promise<AiState> {
   return res?.ok ? res.json() : { status: "unavailable", reason: "network" };
 }
 
-/** Asks the server for the product's AI 3D model, starting generation if needed, and polls until ready. */
-export function useAiModel(slug: string | undefined, enabled: boolean) {
+/**
+ * Asks the server for the product's AI 3D model and polls until it is ready.
+ *
+ * `start` controls whether a missing model is *ordered*. POSTing to /api/models/[slug]
+ * begins a generation, which costs money once FAL_KEY is configured, so only the planner
+ * -- where the visitor explicitly asked for "AI 3D" -- passes true. A product page just
+ * reads what already exists; otherwise every visit to every product would quietly run up
+ * a bill, and the daily cap would be spent by crawlers rather than customers.
+ */
+export function useAiModel(slug: string | undefined, enabled: boolean, start = true) {
   const [state, setState] = useState<AiState>({ status: "loading" });
   useEffect(() => {
     if (!slug || !enabled) return;
@@ -29,7 +38,7 @@ export function useAiModel(slug: string | undefined, enabled: boolean) {
     const tick = async (first: boolean) => {
       let p = first ? states.get(slug) : undefined;
       if (!p) {
-        p = fetchState(slug, first);
+        p = fetchState(slug, first && start);
         if (first) states.set(slug, p);
       }
       const s = await p;
@@ -45,7 +54,7 @@ export function useAiModel(slug: string | undefined, enabled: boolean) {
       alive = false;
       clearTimeout(timer);
     };
-  }, [slug, enabled]);
+  }, [slug, enabled, start]);
   return state;
 }
 
@@ -60,6 +69,22 @@ function prepare(scene: THREE.Group) {
     if (!mesh.isMesh) return;
     const geo = mesh.geometry;
     if (!geo.attributes.normal) geo.computeVertexNormals();
+
+    /*
+     * A model that already has a texture keeps the material it shipped with.
+     *
+     * Everything below was written for TripoSR output, which is vertex colours and
+     * nothing else. Replacing the material unconditionally also threw away the baked
+     * texture of any model that had one -- a photoreal sofa arrived and rendered as a
+     * flat grey blob. Models from models:attach / models:import are textured, so this
+     * branch is now the common case.
+     */
+    const current = mesh.material as THREE.MeshStandardMaterial | undefined;
+    if (current && "map" in current && current.map) {
+      current.side = THREE.DoubleSide;
+      return;
+    }
+
     const col = geo.attributes.color;
     if (col) {
       const c = new THREE.Color();
@@ -87,17 +112,48 @@ const loaded = new Map<string, Promise<THREE.Group>>();
 function loadGlb(url: string) {
   let p = loaded.get(url);
   if (!p) {
-    p = new GLTFLoader().loadAsync(url).then((g) => prepare(g.scene));
+    // setMeshoptDecoder is not optional: scripts/glb-optimise.ts writes
+    // EXT_meshopt_compression into extensionsRequired, and without a decoder GLTFLoader
+    // throws "No DRACOLoader instance provided" / cannot read the compressed buffers.
+    const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+    p = loader.loadAsync(url).then((g) => prepare(g.scene));
     loaded.set(url, p);
   }
   return p;
 }
 
 /**
- * The AI-generated 3D model of the product, scaled so its width/height match the real piece
- * and standing on the floor, centred on its footprint. Casts and receives shadows.
+ * How far a piece may be stretched out of its own proportions to fill its real footprint.
+ *
+ * A generated mesh is reconstructed from one photo, so its depth is a guess and is usually
+ * short: the SAM 3D bed measured 1 : 0.55 : 0.71 (w : h : d) where a real bed is
+ * 1 : 0.66 : 1.30. Scaling it uniformly to the catalogue footprint therefore drew a
+ * 1.64 x 1.16 m bed where the product is 1.64 x 2.13 m -- half a metre of floor the
+ * customer would not actually have. In a room planner the footprint is the thing being
+ * judged, so the piece is stretched to match it; the cap keeps that from turning a bad
+ * reconstruction into a visibly squashed one.
  */
-export function AiModel({ url, width, height }: { url: string; width: number; height: number }) {
+const MAX_STRETCH = 1.6;
+
+/**
+ * The AI-generated 3D model of the product, scaled to the real piece's footprint and
+ * standing on the floor, centred on it. Casts and receives shadows.
+ *
+ * `depth` is separate from `width` because these two are rarely equal -- a bed is half
+ * again as deep as it is wide -- and fitting against the width alone (what this did
+ * before) silently used the wrong axis for every oblong piece.
+ */
+export function AiModel({
+  url,
+  width,
+  depth,
+  height,
+}: {
+  url: string;
+  width: number;
+  depth: number;
+  height: number;
+}) {
   const [obj, setObj] = useState<THREE.Object3D | null>(null);
   useEffect(() => {
     let alive = true;
@@ -110,11 +166,30 @@ export function AiModel({ url, width, height }: { url: string; width: number; he
           o.receiveShadow = true;
         }
       });
-      // normalise: fit inside the real width x height, keep proportions, sit on the floor
-      const box = new THREE.Box3().setFromObject(copy);
-      const size = box.getSize(new THREE.Vector3());
-      const k = Math.min(width / Math.max(size.x, size.z, 1e-3), height / Math.max(size.y, 1e-3));
-      copy.scale.setScalar(k);
+
+      const size = new THREE.Box3().setFromObject(copy).getSize(new THREE.Vector3());
+      const sx = Math.max(size.x, 1e-6);
+      const sy = Math.max(size.y, 1e-6);
+      const sz = Math.max(size.z, 1e-6);
+
+      /*
+       * The mesh keeps whatever orientation it was generated with. Rotating it to match
+       * the footprint's long axis looks obvious and is wrong: a single-view
+       * reconstruction is short along the axis facing the camera, so the longest axis of
+       * the mesh is often not the longest axis of the real piece. Measured on the SAM 3D
+       * bed, the headboard -- a tall, thin slab -- spanned 100% of x and 4% of z and sat
+       * at one end of z, so width ran along x and length along z, already correct, while
+       * the mesh was *longer* in x (65534) than z (46476) and an aspect-ratio rule laid
+       * the bed across the room. The planner's R key turns a piece in one keystroke,
+       * which is a better answer than a guess that is wrong whenever the mesh is poor.
+       */
+      const k = Math.min(width / sx, depth / sz, height / sy);
+
+      // Largest uniform fit first, then a bounded per-axis stretch toward the footprint
+      // the product really occupies.
+      const stretch = (want: number, have: number) => Math.min(want / (have * k), MAX_STRETCH);
+      copy.scale.set(k * stretch(width, sx), k * stretch(height, sy), k * stretch(depth, sz));
+
       const b2 = new THREE.Box3().setFromObject(copy);
       const c = b2.getCenter(new THREE.Vector3());
       copy.position.set(-c.x, -b2.min.y, -c.z);
@@ -125,6 +200,6 @@ export function AiModel({ url, width, height }: { url: string; width: number; he
     return () => {
       alive = false;
     };
-  }, [url, width, height]);
+  }, [url, width, depth, height]);
   return obj ? <primitive object={obj} /> : null;
 }

@@ -64,6 +64,21 @@ export function createModels3d(pool: Pool) {
 
   const fileUrl = (slug: string) => `/api/models/${encodeURIComponent(slug)}/file`;
 
+  /**
+   * Where a ready model actually lives.
+   *
+   * file_name holds one of two things. A bare name means data/models/<name>.glb on this
+   * server, which is what pollJob writes. A full https:// address means the file is
+   * hosted elsewhere -- Vercel Blob, via `npm run models:attach -- <slug> <file> --blob`.
+   *
+   * The remote form exists because data/models/ is in .gitignore and a Vercel function's
+   * filesystem is rebuilt on every deploy, so a locally generated GLB is simply absent in
+   * production and /api/models/<slug>/file answers 404 there. connect-src already allows
+   * the Blob host (see next.config.ts), so GLTFLoader can fetch it directly.
+   */
+  const readyUrl = (slug: string, fileName: string | null) =>
+    fileName?.startsWith("https://") ? fileName : fileUrl(slug);
+
   /** Current state for a product, advancing a queued job if it has finished. */
   async function getModelState(slug: string): Promise<ModelState> {
     const p = await productBySlug(slug);
@@ -71,7 +86,7 @@ export function createModels3d(pool: Pool) {
     const { rows } = await pool.query<Row>(`SELECT * FROM product_models WHERE product_id = $1`, [p.id]);
     const row = rows[0];
     if (!row) return { status: "none" };
-    if (row.status === "ready") return { status: "ready", url: fileUrl(p.slug) };
+    if (row.status === "ready") return { status: "ready", url: readyUrl(p.slug, row.file_name) };
     if (row.status === "failed") return { status: "failed", error: row.error ?? "generation failed" };
     return pollJob(p.id, p.slug, row);
   }

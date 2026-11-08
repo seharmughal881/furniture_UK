@@ -10,6 +10,9 @@ export const roomItemSchema = z.object({
   x: z.number().min(-10).max(10),
   z: z.number().min(-10).max(10),
   rot: z.number().min(-100).max(100),
+  // Optional so rooms saved before resizing existed still load; the planner reads a
+  // missing value as 1. The range matches the clamp in the planner's own resize().
+  scale: z.number().min(0.25).max(4).optional(),
 });
 
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -17,7 +20,14 @@ export const roomSchema = z.object({
   name: z.string().trim().min(1).max(80).default("My room"),
   layout: z.array(roomItemSchema).max(60),
   style: z
-    .object({ wall: z.string().regex(HEX), floor: z.string().max(20), photos: z.boolean(), mode: z.enum(["ai", "photo", "simple"]) })
+    .object({
+      wall: z.string().regex(HEX),
+      floor: z.string().max(20),
+      photos: z.boolean(),
+      mode: z.enum(["ai", "photo", "simple"]),
+      // Whether the room shell is drawn at all -- see Planner's Shell type.
+      shell: z.enum(["walls", "floor", "none"]),
+    })
     .partial()
     .default({}),
 });

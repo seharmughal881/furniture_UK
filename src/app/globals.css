@@ -959,6 +959,17 @@ body.planner-resizing {
   cursor: default;
 }
 
+/* "Empty room" once it is primed and the next tap will actually clear the room. */
+.planner-toolbar button.danger {
+  background: var(--accent);
+  color: #fff;
+}
+
+.planner-toolbar button.danger:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(0.92);
+}
+
 .planner-time {
   position: absolute;
   z-index: 10;
@@ -974,6 +985,23 @@ body.planner-resizing {
   font-size: 12px;
 }
 
+/* Mirrors .planner-time, on the other side, and only while a piece is selected. */
+.planner-rotate {
+  position: absolute;
+  z-index: 10;
+  left: 20px;
+  bottom: 20px;
+  width: min(260px, calc(100% - 40px));
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.planner-rotate div,
 .planner-time div {
   display: flex;
   justify-content: space-between;
@@ -3733,6 +3761,14 @@ span.fly-dot {
     right: 20px;
     bottom: 92px;
   }
+  /* Narrow screens give the time slider the full width, so stack the turn control on
+     top of it rather than letting the two overlap in the same corner. */
+  .planner-rotate {
+    left: 20px;
+    right: 20px;
+    bottom: 164px;
+    width: auto;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -5546,6 +5582,13 @@ video {
     left: 12px;
     right: 84px;
     bottom: 12px;
+    width: auto;
+    padding: 8px 12px;
+  }
+  .planner-rotate {
+    left: 12px;
+    right: 12px;
+    bottom: 76px;
     width: auto;
     padding: 8px 12px;
   }

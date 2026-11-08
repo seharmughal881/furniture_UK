@@ -26,6 +26,49 @@ is downloaded to `data/models/` and served from `/api/models/<slug>/file`, so it
 
 Best results come from photos of the product alone on a white background.
 
+### Generating models from the product photos (fal.ai)
+
+```bash
+npm run models:fal -- dublin atlanta-bedroom-set   # named products
+npm run models:fal -- --all --limit 5              # try a few first
+npm run models:fal -- --all --yes                  # the lot (prints the bill first)
+npm run models:fal -- --all --yes --blob           # ...and store them for production
+```
+
+Uses **SAM 3D Objects** on fal.ai with `export_textured_glb`, because that is the only
+route measured here that meets all four requirements at once. On this project's own
+files: SAM 3D alone gave a watertight mesh but vertex colours and no UV map, so no
+texture could be applied; FurniMesh gave UVs and two textures but an open shell with
+78,684 boundary edges. `export_textured_glb` gives the closed mesh *and* the texture.
+
+It costs about $0.02 per model, so it refuses to start on more than five products without
+`--yes`, and prints the bill first. Set `FAL_KEY` in `.env.local` — **not** in Vercel
+unless you mean it, because with a key set the public `/api/models/[slug]` route will also
+generate models for visitors.
+
+### Attaching a model you already have
+
+If you already have a `.glb` -- exported from Blender, bought, or made with a service like
+FurniMesh -- register it against a product instead of generating one:
+
+```bash
+npm run models:attach -- atlanta-bedroom-set ~/Downloads/sofa.glb           # this machine
+npm run models:attach -- atlanta-bedroom-set ~/Downloads/sofa.glb --blob    # for production
+npm run models:attach -- atlanta-bedroom-set ~/Downloads/sofa.glb --force   # replace an existing one
+```
+
+It checks the glTF header, stores the file and marks the product `ready`; nothing is sent
+to fal.ai, so nothing is billed. Open `/planner`, pick **"AI 3D (real shape)"**, and the
+product can then be dragged, rotated (R) and arranged as that model.
+
+**Local and production need separate runs.** Without `--blob` the file goes to
+`data/models/`, which is in `.gitignore` and is rebuilt from scratch on every Vercel
+deploy -- so a model attached that way exists only on your machine, and
+`/api/models/<slug>/file` answers 404 in production. `--blob` uploads to Vercel Blob
+(needs `BLOB_READ_WRITE_TOKEN`, from Vercel -> Storage -> Blob, or `vercel env pull
+.env.local`) and stores the address instead, which works in both places. Only products
+that have a **3D model shape** set appear in the planner at all.
+
 ### Free option (no API key, no payment): Google Colab + TripoSR
 
 1. `npm run models:list` → writes `data/models-jobs.json` (furniture products without a 3D model yet).
@@ -33,6 +76,21 @@ Best results come from photos of the product alone on a white background.
    choose **Runtime → Change runtime type → T4 GPU**, and run the cells. Upload `models-jobs.json` when asked.
    It converts every photo with TripoSR (MIT licence) and downloads `muscat-3d-models.zip`.
 3. `npm run models:import -- ~/Downloads/muscat-3d-models.zip` → the planner shows them as real 3D models.
+   Add `--blob` to put them on Vercel Blob for the live site (see the note below), `--raw` to skip optimisation.
+
+### Model size
+
+`models:import` and `models:attach` both run every file through `scripts/glb-optimise.ts`
+before storing it, and this is not cosmetic. One measured example: a 16.9 MB sofa --
+282,718 triangles and two full-size PNGs -- became 0.7 MB, a 96% saving, with the
+silhouette intact. Across 183 placeable products that is the difference between roughly
+3 GB and 130 MB; the untreated version simply cannot be loaded several at a time in the
+planner.
+
+The optimiser welds and simplifies geometry, resizes textures to 1024px WebP, and applies
+`EXT_meshopt_compression`. **Any reader of these files must register a Meshopt decoder** --
+`src/three/AiModel.tsx` calls `GLTFLoader.setMeshoptDecoder`, and anything new that opens
+them has to as well.
 
 ---
 

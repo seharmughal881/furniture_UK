@@ -14,10 +14,11 @@ import { shopifyImage } from "@/lib/images";
 import { CATEGORIES } from "@/lib/catalog-data";
 import { whatsappLink } from "@/lib/company";
 import { DELIVERY, formatPrice, savingPercent, type DepthInfo, type Material, type Product } from "@/lib/types";
+import { AiModel, useAiModel } from "@/three/AiModel";
 import { daylightAt } from "@/three/daylight";
 import { frameFor } from "@/three/framing";
 import { Furniture } from "@/three/FurniturePiece";
-import type { FurnitureKind } from "@/three/furniture";
+import { FOOTPRINT, HEIGHT, type FurnitureKind } from "@/three/furniture";
 import { SceneLights, ShadowFloor } from "@/three/SceneLights";
 import { MattressLayers } from "./MattressLayers";
 import { PopUp3D } from "./PopUp3D";
@@ -44,8 +45,26 @@ function CameraDirector({
   return null;
 }
 
-/** Interactive 3D preview using the representative model for this kind of furniture. */
-function Preview3D({ kind, fabric, wood }: { kind: FurnitureKind; fabric: string; wood: string }) {
+/**
+ * Interactive 3D preview: the real model of this product when one has been generated,
+ * otherwise the representative model for its kind of furniture.
+ *
+ * Only the planner used to show the generated models, so a product with its own 3D scan
+ * still displayed a generic sofa here -- the one page where a customer is deciding on
+ * that exact piece. Reading is deliberately passive (`start: false`): a product page view
+ * never orders a new model, which would bill per visit once FAL_KEY is set.
+ */
+function Preview3D({
+  kind,
+  slug,
+  fabric,
+  wood,
+}: {
+  kind: FurnitureKind;
+  slug: string;
+  fabric: string;
+  wood: string;
+}) {
   const [explode, setExplode] = useState(0);
   const [hour, setHour] = useState(15);
   const [spin, setSpin] = useState(true);
@@ -62,6 +81,9 @@ function Preview3D({ kind, fabric, wood }: { kind: FurnitureKind; fabric: string
   const mounted = useRef<number | null>(null);
   const frame = frameFor(kind, 1.15);
   const palette = { fabric, wood, metal: "#2b2b2b" };
+  const ai = useAiModel(slug, true, false);
+  const real = ai.status === "ready";
+  const [fw, fd] = FOOTPRINT[kind];
 
   function goTo(p: Preset) {
     const [tx, ty, tz] = frame.target;
@@ -101,17 +123,21 @@ function Preview3D({ kind, fabric, wood }: { kind: FurnitureKind; fabric: string
         <CameraDirector goal={goal} controls={controls} />
         <SceneLights hour={() => hourRef.current} shadowSize={2.5} />
         <ShadowFloor opacity={0.3} />
-        <Furniture
-          kind={kind}
-          palette={palette}
-          spread={0.8}
-          glow={() => daylightAt(hourRef.current).glow}
-          assembly={() => {
-            mounted.current ??= performance.now();
-            return Math.min(1, (performance.now() - mounted.current) / 2600);
-          }}
-          explode={() => explodeRef.current}
-        />
+        {real && ai.status === "ready" ? (
+          <AiModel url={ai.url} width={fw} depth={fd} height={HEIGHT[kind]} />
+        ) : (
+          <Furniture
+            kind={kind}
+            palette={palette}
+            spread={0.8}
+            glow={() => daylightAt(hourRef.current).glow}
+            assembly={() => {
+              mounted.current ??= performance.now();
+              return Math.min(1, (performance.now() - mounted.current) / 2600);
+            }}
+            explode={() => explodeRef.current}
+          />
+        )}
       </View>
       <div className="view-presets" role="group" aria-label="Camera view">
         {(["angle", "front", "side", "top"] as Preset[]).map((p) => (
@@ -120,12 +146,20 @@ function Preview3D({ kind, fabric, wood }: { kind: FurnitureKind; fabric: string
           </button>
         ))}
       </div>
-      <p className="preview-note">Representative 3D model — use it to preview style, colour and how it&apos;s built.</p>
+      <p className="preview-note">
+        {real
+          ? "A 3D model of this exact piece — drag to turn it, or use the views above."
+          : "Representative 3D model — use it to preview style, colour and how it's built."}
+      </p>
       <div className="hud">
-        <label className="explode">
-          Exploded view · {Math.round(explode * 100)}%
-          <input type="range" min={0} max={1} step={0.01} value={explode} onChange={(e) => setExplode(+e.target.value)} />
-        </label>
+        {/* Exploded view pulls apart the procedural model's individual parts. A generated
+            mesh is one solid piece, so the slider would do nothing but mislead. */}
+        {!real && (
+          <label className="explode">
+            Exploded view · {Math.round(explode * 100)}%
+            <input type="range" min={0} max={1} step={0.01} value={explode} onChange={(e) => setExplode(+e.target.value)} />
+          </label>
+        )}
         <label className="explode">
           Light · {String(Math.floor(hour)).padStart(2, "0")}:00
           <input type="range" min={7} max={22} step={0.1} value={hour} onChange={(e) => setHour(+e.target.value)} />
@@ -371,7 +405,7 @@ export function ProductExperience({
         {tab === "layers" && layered ? (
           <MattressLayers name={product.name} description={product.description} />
         ) : tab === "3d" && product.kind ? (
-          <Preview3D kind={product.kind} fabric={fabric} wood={wood} />
+          <Preview3D kind={product.kind} slug={product.slug} fabric={fabric} wood={wood} />
         ) : tab === "video" && hasVideo && !wide ? (
           <ProductVideo
             src={product.videoUrl}

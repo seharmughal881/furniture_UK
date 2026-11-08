@@ -112,7 +112,17 @@ export type Material = {
 export type Palette = { fabric: string; wood: string; metal: string };
 
 /** A piece in the room planner; slug is the real product it represents. */
-export type RoomItem = { id: string; kind: FurnitureKind; slug?: string; x: number; z: number; rot: number };
+/** `scale` is the owner's own resize of this piece, 1 = the catalogue size. Optional:
+ *  rooms saved before it existed simply have none, and read back as 1. */
+export type RoomItem = {
+  id: string;
+  kind: FurnitureKind;
+  slug?: string;
+  x: number;
+  z: number;
+  rot: number;
+  scale?: number;
+};
 
 /** Prices are stored in baisa and shown in Omani rials with 3 decimals, VAT included. */
 export const formatPrice = (baisa: number) =>

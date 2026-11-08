@@ -30,7 +30,13 @@ const BLOB_FILES = "https://*.public.blob.vercel-storage.com";
 
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+  // 'wasm-unsafe-eval' is needed by the Meshopt decoder, which compiles a small
+  // WebAssembly module to unpack the EXT_meshopt_compression used by every generated 3D
+  // model (see scripts/glb-optimise.ts). Without it Chrome blocks the compile, GLTFLoader
+  // cannot read the file and the 3D view renders nothing -- which only showed up in a
+  // production build, because dev adds 'unsafe-eval' and that happens to allow WASM too.
+  // It permits WebAssembly only; it does not re-enable eval() for JavaScript.
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${isDev ? " 'unsafe-eval'" : ""}`,
   // Inline style attributes are used throughout the storefront (progress bars, 3D overlays).
   "style-src 'self' 'unsafe-inline'",
   // Any https image host, not an allow-list of two.

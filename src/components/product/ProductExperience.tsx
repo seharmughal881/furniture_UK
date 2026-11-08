@@ -24,7 +24,7 @@ import { MattressLayers } from "./MattressLayers";
 import { PopUp3D } from "./PopUp3D";
 import { Stars } from "./Stars";
 
-type Preset = "angle" | "front" | "side" | "top";
+type Preset = "angle" | "front" | "back" | "side" | "top";
 
 /** Glides the camera to a preset position, then hands control back to OrbitControls. */
 function CameraDirector({
@@ -85,12 +85,37 @@ function Preview3D({
   const real = ai.status === "ready";
   const [fw, fd] = FOOTPRINT[kind];
 
+  /*
+   * A still of this exact product, shown in place of the 3D scene.
+   *
+   * Drop a file at public/3d-preview/<slug>.jpg and it is used; no code change and no
+   * database column. Products without one fall through to the 3D scene below, which is
+   * what the onError does -- the browser tells us the file is not there.
+   */
+  const [stillOk, setStillOk] = useState(true);
+  const still = `/3d-preview/${slug}.jpg`;
+  if (stillOk) {
+    return (
+      <div className="stage-3d">
+        <img
+          src={still}
+          alt={`${kind} shown in 3D`}
+          onError={() => setStillOk(false)}
+          style={{ width: "100%", height: "100%", objectFit: "contain" }}
+        />
+      </div>
+    );
+  }
+
   function goTo(p: Preset) {
     const [tx, ty, tz] = frame.target;
     const dist = new THREE.Vector3(...frame.position).distanceTo(new THREE.Vector3(...frame.target));
     const pos: Record<Preset, [number, number, number]> = {
       angle: frame.position,
       front: [tx, ty + dist * 0.12, tz + dist],
+      // Straight behind the piece. On a generated model this is the inferred side, so it
+      // is also the honest test of how good the reconstruction actually is.
+      back: [tx, ty + dist * 0.12, tz - dist],
       side: [tx + dist, ty + dist * 0.12, tz],
       top: [tx + 0.001, ty + dist * 1.05, tz + 0.001],
     };
@@ -140,7 +165,7 @@ function Preview3D({
         )}
       </View>
       <div className="view-presets" role="group" aria-label="Camera view">
-        {(["angle", "front", "side", "top"] as Preset[]).map((p) => (
+        {(["angle", "front", "back", "side", "top"] as Preset[]).map((p) => (
           <button key={p} aria-pressed={preset === p && !spin} onClick={() => goTo(p)}>
             {p === "angle" ? "3/4" : p[0].toUpperCase() + p.slice(1)}
           </button>

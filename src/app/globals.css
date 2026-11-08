@@ -8647,3 +8647,16 @@ input[type="range"] {
     right: auto;
   }
 }
+
+/* The 3D model currently set on a product, in the admin product form. */
+.adm-model-current {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.adm-model-current code {
+  word-break: break-all;
+}

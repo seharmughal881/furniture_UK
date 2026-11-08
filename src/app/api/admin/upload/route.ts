@@ -29,6 +29,12 @@ const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/avif"];
 const ALLOWED_VIDEO_TYPES = ["video/mp4", "video/webm"];
 const MAX_VIDEO_BYTES = 64 * 1024 * 1024;
 
+// 3D models, binary glTF only. A .glb is data, not a document: unlike SVG it carries no
+// script. Generated models routinely run to tens of megabytes before optimisation, hence
+// the same ceiling as a video.
+const ALLOWED_MODEL_TYPES = ["model/gltf-binary"];
+const MAX_MODEL_BYTES = 64 * 1024 * 1024;
+
 const UPLOAD_LIMIT = 120;
 const UPLOAD_WINDOW_SECONDS = 60 * 60;
 
@@ -64,8 +70,14 @@ export async function POST(request: Request): Promise<Response> {
       // between two fixed allow-lists -- it can never name a type of its own -- and the
       // choice is baked into the token Blob issues, so the limits hold server-side.
       onBeforeGenerateToken: async (_pathname, clientPayload) => ({
-        allowedContentTypes: clientPayload === "video" ? ALLOWED_VIDEO_TYPES : ALLOWED_TYPES,
-        maximumSizeInBytes: clientPayload === "video" ? MAX_VIDEO_BYTES : MAX_UPLOAD_BYTES,
+        allowedContentTypes:
+          clientPayload === "video" ? ALLOWED_VIDEO_TYPES
+          : clientPayload === "model" ? ALLOWED_MODEL_TYPES
+          : ALLOWED_TYPES,
+        maximumSizeInBytes:
+          clientPayload === "video" ? MAX_VIDEO_BYTES
+          : clientPayload === "model" ? MAX_MODEL_BYTES
+          : MAX_UPLOAD_BYTES,
         // Two people uploading "sofa.jpg" must not overwrite each other, and a replaced
         // photo must get a new URL or the old one lingers in browser and CDN caches.
         addRandomSuffix: true,

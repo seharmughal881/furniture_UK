@@ -150,6 +150,9 @@ function productInputFromForm(formData: FormData) {
     // cleanly to "" instead of failing, and FIELDS then writes that "" over video_url --
     // silently erasing the product's video on every unrelated save.
     videoUrl: text("videoUrl"),
+    // Same reason as videoUrl: the schema defaults it to "", so leaving it unread would
+    // quietly delete the product's 3D model on every unrelated save.
+    modelUrl: text("modelUrl"),
     variants: json("variants"),
   };
 }

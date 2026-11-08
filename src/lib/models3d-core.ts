@@ -77,7 +77,17 @@ export function createModels3d(pool: Pool) {
    * the Blob host (see next.config.ts), so GLTFLoader can fetch it directly.
    */
   const readyUrl = (slug: string, fileName: string | null) =>
-    fileName?.startsWith("https://") ? fileName : fileUrl(slug);
+    // An address, not a name: hand it to the browser as it stands. "https://" is a file on
+    // Vercel Blob; a leading "/" is one served from public/, which is how a model added in
+    // the admin works before Blob storage is configured. Routing either through
+    // /api/models/[slug]/file would 404, because that route only serves data/models.
+    fileName?.startsWith("https://") || fileName?.startsWith("/")
+      ? fileName
+      : // The stored file name goes in the query so the address changes whenever the model
+        // does. The route answers at a fixed path and tells browsers to keep the file for a
+        // day, so without this a replaced model kept serving the old bytes from cache and
+        // looked like the attach had silently failed. The route ignores the query itself.
+        `${fileUrl(slug)}?v=${encodeURIComponent(fileName ?? "")}`;
 
   /** Current state for a product, advancing a queued job if it has finished. */
   async function getModelState(slug: string): Promise<ModelState> {

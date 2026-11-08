@@ -187,6 +187,21 @@ export const videoUrlSchema = z
   )
   .default("");
 
+/**
+ * The product's 3D model address. Same https-only rule as a photo or a video -- that is
+ * what keeps "javascript:" and "data:" out of a URL the storefront will fetch -- and
+ * allowed to be empty, which is how a product says "no model".
+ */
+export const modelUrlSchema = z
+  .string()
+  .trim()
+  .max(600)
+  .refine(
+    (s) => s === "" || s.startsWith("https://") || s.startsWith("/"),
+    "A 3D model must be an https:// address or a /path",
+  )
+  .default("");
+
 export const productSlugSchema = z
   .string()
   .trim()
@@ -262,6 +277,12 @@ export const productFormSchema = z.object({
   leadTimeWeeks: optionalInt("Lead time", 104),
   images: z.array(imageUrlSchema).max(12).default([]),
   videoUrl: videoUrlSchema,
+  /**
+   * The product's own 3D model, as an address. Empty means "no model", which is how the
+   * owner removes one. Stored in product_models rather than on the product row, so
+   * saveProductAction hands it to updateProduct/createProduct separately.
+   */
+  modelUrl: modelUrlSchema,
   variants: z.array(productVariantSchema).max(40).default([]),
 })
   /**

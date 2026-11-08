@@ -5,6 +5,7 @@ import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { saveProductAction, type ProductSaveState } from "../actions";
 import { ImageManager } from "./ImageManager";
+import { ModelManager } from "./ModelManager";
 import { VideoManager } from "./VideoManager";
 import { VariantEditor, type VariantDraft } from "./VariantEditor";
 import type { ProductEdit } from "@/lib/admin/products";
@@ -262,6 +263,21 @@ export function ProductForm({
       <section className="adm-card adm-pad">
         <h2>Video</h2>
         <VideoManager name="videoUrl" initial={product?.videoUrl ?? ""} uploadsEnabled={uploadsEnabled} />
+
+        <h2>3D model</h2>
+        {/*
+          Keyed on the stored value so the box is rebuilt whenever the server's value
+          changes. useState only reads `initial` on mount, so after a save-and-redirect
+          React reused the old instance and kept showing what had been typed -- the form
+          claimed a model was set while the database still held the previous one. Keying
+          it means the form can only ever show what was actually saved.
+        */}
+        <ModelManager
+          key={product?.modelUrl ?? ""}
+          name="modelUrl"
+          initial={product?.modelUrl ?? ""}
+          uploadsEnabled={uploadsEnabled}
+        />
         {err("videoUrl")}
       </section>
 

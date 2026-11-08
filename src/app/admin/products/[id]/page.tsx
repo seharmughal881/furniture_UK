@@ -36,6 +36,7 @@ const FIELD_LABEL: Record<string, string> = {
   height_cm: "Height",
   lead_time_weeks: "Lead time",
   images: "Photos",
+  model_url: "3D model",
   variants: "Options",
 };
 

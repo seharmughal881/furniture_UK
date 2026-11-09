@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Footer } from "@/components/Footer";
+import { HeroMobile } from "@/components/home/HeroMobile";
 import { HeroStory } from "@/components/home/HeroStory";
 import { CountUp, Marquee } from "@/components/Motion";
 import { PlannerTeaser } from "@/components/home/PlannerTeaser";
@@ -11,7 +12,7 @@ import { getMaterials, getProductIndex } from "@/lib/catalog";
 import { getContent } from "@/lib/content/read";
 import type { PlannerTeaserCopy } from "@/components/home/PlannerTeaser";
 import { shopifyImage } from "@/lib/images";
-import { DELIVERY, savingPercent } from "@/lib/types";
+import { DELIVERY, formatPrice, savingPercent } from "@/lib/types";
 
 export default async function Home() {
   // The planner teaser is a client component (it drives a WebGL view), so its wording is
@@ -21,8 +22,41 @@ export default async function Home() {
     getMaterials(),
     getContent<PlannerTeaserCopy & { enabled: boolean }>("planner_teaser"),
   ]);
-  // phones open on a real room photo: the Atlas sofa set lounge
-  const heroPhoto = (products.find((p) => p.slug === "atlas-sofa-set-1") ?? products.find((p) => p.category === "sofas"))?.image;
+  /*
+   * Phones get a photo carousel in place of the 3D story (see HeroMobile), so the
+   * hero needs real pictures rather than one. One piece per category keeps the five
+   * photos from all being sofas, and each slide links to that product; `kind` and
+   * `inStock` keep out anything with no photo worth showing or nothing to sell.
+   */
+  const HERO_CATEGORIES = [
+    ["sofas", "Sofa sets"],
+    ["bedroom-sets", "Bedroom sets"],
+    ["dining", "Dining"],
+    ["tables", "Tables & TV units"],
+    ["lighting", "Lighting"],
+  ] as const;
+  const heroSlides = HERO_CATEGORIES.flatMap(([category, label]) => {
+    /*
+     * The dearest piece in the category, not the first one.
+     *
+     * Sort order put an OMR 2.090 downlight and an OMR 11.900 side chair on the front
+     * page -- genuine products, but accessories photographed against a white card.
+     * Price is a decent stand-in for "showcase piece" in furniture: the sets and
+     * chandeliers cost the most and are the ones shot in a room.
+     */
+    const pick = products
+      .filter((p) => p.category === category && p.inStock && p.image)
+      .sort((a, b) => b.priceCents - a.priceCents)[0];
+    return pick?.image
+      ? [{
+          href: `/product/${pick.slug}`,
+          image: shopifyImage(pick.image, 900),
+          label,
+          name: pick.name,
+          price: formatPrice(pick.priceCents),
+        }]
+      : [];
+  });
   const whyPhoto = (products.find((p) => p.slug === "woodi-sofa-set") ?? products.find((p) => p.category === "sofas"))?.image;
   // best sellers / new arrivals first (featured come first in sort order), furniture only, one per name family
   const furniture = products.filter((p) => p.kind && p.inStock);
@@ -34,7 +68,9 @@ export default async function Home() {
 
   return (
     <main>
-      <HeroStory materials={materials} photo={heroPhoto && shopifyImage(heroPhoto, 900)} />
+      {/* Phones show the carousel and web shows the 3D story; CSS picks one. */}
+      <HeroMobile slides={heroSlides} />
+      <HeroStory materials={materials} />
 
       <Marquee
         items={[

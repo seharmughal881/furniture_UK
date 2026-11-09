@@ -24,6 +24,13 @@ const hourAt = (p: number) => 13 + 9 * smooth(0.62, 0.97, p);
 // build-up before START is skipped). Raise START to 0 to bring the build-up back.
 const START: number = A_END;
 
+/**
+ * The narrowest viewport that gets the 3D story, in px. Must stay in step with the
+ * `max-width: 720px` switch in globals.css that hides `.story` and shows
+ * `.hero-mobile`; below it this component renders its copy but no WebGL.
+ */
+const DESKTOP = 721;
+
 type Shot = { p: number; pos: [number, number, number]; target: [number, number, number] };
 const SHOTS: Shot[] = [
   { p: 0.0, pos: [4.4, 3.1, 5.8], target: [0.4, 0.7, 0] },
@@ -114,8 +121,11 @@ function HeroScene({ progress, palette }: { progress: React.RefObject<number>; p
   );
 }
 
-/** `photo`: a real Muscat Furniture room photo shown as the phone's first screen (fades out on scroll). */
-export function HeroStory({ materials, photo }: { materials: Material[]; photo?: string | null }) {
+/**
+ * The scroll-driven 3D story. Shown from tablet width up; phones get HeroMobile
+ * instead, so everything expensive in here is gated on `DESKTOP` below.
+ */
+export function HeroStory({ materials }: { materials: Material[] }) {
   const fabrics = materials.filter((m) => m.role === "fabric");
   const woods = materials.filter((m) => m.role === "wood");
   const metals = materials.filter((m) => m.role === "metal");
@@ -129,7 +139,27 @@ export function HeroStory({ materials, photo }: { materials: Material[]; photo?:
   const progress = useRef(START);
   const [chapter, setChapter] = useState(0);
 
+  /*
+   * Phones never render this story -- CSS hides `.story` below 721px -- but hiding it
+   * is not the same as not running it. Left ungated, a phone would still mount a
+   * second WebGL <View> into the shared canvas and drive a requestAnimationFrame
+   * loop against a display:none element for the life of the page. So the viewport is
+   * asked directly, at the same width CSS switches on.
+   *
+   * It starts false so the server's HTML and the first client render agree; the
+   * canvas is client-only anyway, so there is nothing to hydrate into.
+   */
+  const [desktop, setDesktop] = useState(false);
   useEffect(() => {
+    const mq = window.matchMedia(`(min-width: ${DESKTOP}px)`);
+    const read = () => setDesktop(mq.matches);
+    read();
+    mq.addEventListener("change", read);
+    return () => mq.removeEventListener("change", read);
+  }, []);
+
+  useEffect(() => {
+    if (!desktop) return;
     const bp = new THREE.Color("#120d0f"); // warm near-black, matching the dark sections below
     const bone = new THREE.Color("#ffffff");
     const top = new THREE.Color();
@@ -167,7 +197,6 @@ export function HeroStory({ materials, photo }: { materials: Material[]; photo?:
       st.style.setProperty("--stage-ink", `#${ink.getHexString()}`);
       st.style.setProperty("--grid-opacity", String(1 - build));
       const raw = (p - START) / (1 - START); // how far through the section the visitor has scrolled
-      st.style.setProperty("--hero-photo", String(1 - smooth(0.004, 0.06, raw)));
       st.style.setProperty("--accent-live", night > 0.5 ? "#d9b77a" : "#c8102e"); // gold under lamplight
       st.style.setProperty("--clock-ink", night > 0.5 ? "#d9b77a" : "inherit");
       if (clock.current) clock.current.textContent = formatHour(hourAt(p));
@@ -180,7 +209,7 @@ export function HeroStory({ materials, photo }: { materials: Material[]; photo?:
     };
     id = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(id);
-  }, []);
+  }, [desktop]);
 
   return (
     <section ref={section} className="story" aria-label="Watch a Muscat Furniture sofa being built">
@@ -188,14 +217,11 @@ export function HeroStory({ materials, photo }: { materials: Material[]; photo?:
         <div className="stage-grid" />
       </div>
       <div className="stage">
-        {photo && (
-          <div className="hero-photo" aria-hidden>
-            <img src={photo} alt="" fetchPriority="high" decoding="async" />
-          </div>
+        {desktop && (
+          <View className="stage-view">
+            <HeroScene progress={progress} palette={palette} />
+          </View>
         )}
-        <View className="stage-view">
-          <HeroScene progress={progress} palette={palette} />
-        </View>
 
         <div className="blueprint-spec" style={{ opacity: chapter === 0 && START === 0 ? 1 : 0 }} aria-hidden>
           3-SEAT SOFA / LIVE 3D

@@ -38,10 +38,32 @@ const COLLECTIONS = [
   "sockets", "outlet", "dp-switches-20amps-40-amps", "sanitary", "most-selling", "new-arrivals-1",
 ];
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * One request to the Shopify storefront, with a pause and a retry on 429.
+ *
+ * A full --fetch is three catalogue pages plus one or two per collection, around fifty
+ * requests back to back, and Shopify rate-limits a burst like that. Without this the
+ * run died on the first 429 ("Error: 429 .../collections/sofa-set/products.json") after
+ * the catalogue had already been written, leaving a half-made snapshot. The gap between
+ * requests keeps us under the limit in the first place; the retry handles the rest, and
+ * honours Retry-After when the server sends one.
+ */
+const GAP_MS = 600;
+const RETRIES = 5;
 async function getJson(url: string) {
-  const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (catalogue sync)" } });
-  if (!res.ok) throw new Error(`${res.status} ${url}`);
-  return res.json();
+  for (let attempt = 0; ; attempt++) {
+    await sleep(GAP_MS);
+    const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (catalogue sync)" } });
+    if (res.ok) return res.json();
+    const retryable = res.status === 429 || res.status >= 500;
+    if (!retryable || attempt >= RETRIES) throw new Error(`${res.status} ${url}`);
+    // Retry-After is seconds when Shopify sends it; otherwise back off 4s, 8s, 16s...
+    const wait = Number(res.headers.get("retry-after")) * 1000 || 4000 * 2 ** attempt;
+    console.log(`  ${res.status} on ${new URL(url).pathname} — waiting ${Math.round(wait / 1000)}s`);
+    await sleep(wait);
+  }
 }
 
 async function fetchSnapshot() {
@@ -205,7 +227,18 @@ async function main() {
     // Retire the invented demo catalogue and its sample reviews; orders that reference them stay intact.
     await db.query("UPDATE products SET active = false WHERE source = 'demo'");
     await db.query("DELETE FROM reviews WHERE is_demo");
-    // free every imported slug first so renamed slugs can't collide mid-import
+    /*
+     * Free every imported slug first so renamed slugs can't collide mid-import.
+     *
+     * The placeholder is only meant to last until the loop below reassigns it, but a
+     * product the client has deleted from Shopify is never reached by that loop, so it
+     * used to keep `tmp-<id>` for good: one sync left 47 deleted wardrobes sitting on
+     * slugs like `tmp-26`. They stay in the table on purpose, so past orders and
+     * wishlists keep resolving, and that only works if the address survives too.
+     * So the real slugs are remembered here and handed back afterwards.
+     */
+    await db.query(`CREATE TEMP TABLE slug_before ON COMMIT DROP AS
+                      SELECT id, slug FROM products WHERE source = 'muscat'`);
     await db.query("UPDATE products SET slug = 'tmp-' || id WHERE source = 'muscat'");
 
     const seen: number[] = [];
@@ -259,6 +292,23 @@ async function main() {
     }
     // products removed from the Shopify store disappear here too
     await db.query("UPDATE products SET active = false WHERE source = 'muscat' AND NOT (external_id = ANY($1))", [seen]);
+
+    /*
+     * Give the deleted products their addresses back (see slug_before above). The
+     * NOT EXISTS guard covers the one case where it would fail: the client deleting a
+     * product and giving its handle to a different one, so the old slug now belongs to
+     * something live. Those keep the placeholder -- the URL is gone either way, and a
+     * duplicate slug would break the live product too.
+     */
+    const { rowCount: restored } = await db.query(
+      `UPDATE products p SET slug = b.slug
+         FROM slug_before b
+        WHERE p.id = b.id
+          AND p.slug = 'tmp-' || p.id
+          AND b.slug <> 'tmp-' || b.id
+          AND NOT EXISTS (SELECT 1 FROM products q WHERE q.slug = b.slug AND q.id <> p.id)`,
+    );
+    if (restored) console.log(`Kept the original address for ${restored} product(s) no longer on Shopify.`);
 
     for (const [i, s] of STORES.entries()) {
       await db.query(

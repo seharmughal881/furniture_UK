@@ -5,7 +5,11 @@ import { useFrame, useThree } from "@react-three/fiber";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
+import type { HeroSofa } from "@/lib/catalog";
+import { formatPrice } from "@/lib/types";
 import type { Material, Palette } from "@/lib/types";
+import { AiModel } from "@/three/AiModel";
+import { FOOTPRINT, HEIGHT } from "@/three/furniture";
 import { daylightAt, formatHour } from "@/three/daylight";
 import { Furniture } from "@/three/FurniturePiece";
 import { SceneLights, ShadowFloor } from "@/three/SceneLights";
@@ -30,6 +34,28 @@ const START: number = A_END;
  * `.hero-mobile`; below it this component renders its copy but no WebGL.
  */
 const DESKTOP = 721;
+
+/**
+ * The swatch closest to a real product's colour, so the hero opens in the shade the
+ * sofa is actually sold in rather than whichever fabric happens to be first in the
+ * table. Plain squared distance in RGB: the swatches are far enough apart that a
+ * perceptual space would pick the same one, and this needs no colour library.
+ */
+function nearestMaterial(list: Material[], hex: string | undefined) {
+  const want = /^#[0-9a-f]{6}$/i.test(hex ?? "") ? hex! : null;
+  if (!want || !list.length) return list[0];
+  const rgb = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const [r, g, b] = rgb(want);
+  let best = list[0];
+  let bestD = Infinity;
+  for (const m of list) {
+    if (!/^#[0-9a-f]{6}$/i.test(m.hex)) continue;
+    const [mr, mg, mb] = rgb(m.hex);
+    const d = (mr - r) ** 2 + (mg - g) ** 2 + (mb - b) ** 2;
+    if (d < bestD) { bestD = d; best = m; }
+  }
+  return best;
+}
 
 type Shot = { p: number; pos: [number, number, number]; target: [number, number, number] };
 const SHOTS: Shot[] = [
@@ -94,7 +120,7 @@ const EXTRAS = [
   { kind: "bookshelf", pos: [2.6, 0, -1.0], rot: -0.35 },
 ] as const;
 
-function HeroScene({ progress, palette }: { progress: React.RefObject<number>; palette: Palette }) {
+function HeroScene({ progress, palette, sofa }: { progress: React.RefObject<number>; palette: Palette; sofa: HeroSofa | null }) {
   const hour = () => hourAt(progress.current);
   const glow = () => daylightAt(hour()).glow;
   return (
@@ -103,8 +129,22 @@ function HeroScene({ progress, palette }: { progress: React.RefObject<number>; p
       <CameraRig progress={progress} />
       <SceneLights hour={hour} shadowSize={5} />
       <ShadowFloor />
-      {/* parts start close together and slightly into the build, so the first screen already reads as a sofa */}
-      <Furniture kind="sofa" palette={palette} spread={0.95} assembly={() => smooth(-0.07, A_END, progress.current)} />
+      {/*
+        The hero builds Muscat Furniture's best-selling sofa set.
+
+        When that product has a real scanned model attached in the admin, the hero shows
+        the actual piece; until then it draws the sofa from parts, which is what makes
+        the assembly and the fabric swatches possible at all. A scanned mesh is one solid
+        object -- it cannot come apart or change fabric -- so the drawn sofa is not a
+        placeholder to be removed, it is the only version the story can animate.
+        Parts start close together and slightly into the build, so the first screen
+        already reads as a sofa.
+      */}
+      {sofa?.modelUrl ? (
+        <AiModel url={sofa.modelUrl} width={FOOTPRINT.sofa[0]} depth={FOOTPRINT.sofa[1]} height={HEIGHT.sofa} />
+      ) : (
+        <Furniture kind="sofa" palette={palette} spread={0.95} assembly={() => smooth(-0.07, A_END, progress.current)} />
+      )}
       {EXTRAS.map((e, i) => (
         <Furniture
           key={e.kind}
@@ -125,12 +165,13 @@ function HeroScene({ progress, palette }: { progress: React.RefObject<number>; p
  * The scroll-driven 3D story. Shown from tablet width up; phones get HeroMobile
  * instead, so everything expensive in here is gated on `DESKTOP` below.
  */
-export function HeroStory({ materials }: { materials: Material[] }) {
+export function HeroStory({ materials, sofa }: { materials: Material[]; sofa: HeroSofa | null }) {
   const fabrics = materials.filter((m) => m.role === "fabric");
   const woods = materials.filter((m) => m.role === "wood");
   const metals = materials.filter((m) => m.role === "metal");
 
-  const [fabric, setFabric] = useState(fabrics[0]);
+  // opens in the real sofa's own colour; the visitor can still try the others
+  const [fabric, setFabric] = useState(() => nearestMaterial(fabrics, sofa?.colour));
   const [wood, setWood] = useState(woods[0]);
   const palette: Palette = { fabric: fabric.hex, wood: wood.hex, metal: metals[0]?.hex ?? "#b9b8b4" };
 
@@ -219,17 +260,36 @@ export function HeroStory({ materials }: { materials: Material[] }) {
       <div className="stage">
         {desktop && (
           <View className="stage-view">
-            <HeroScene progress={progress} palette={palette} />
+            <HeroScene progress={progress} palette={palette} sofa={sofa} />
           </View>
         )}
 
-        <div className="blueprint-spec" style={{ opacity: chapter === 0 && START === 0 ? 1 : 0 }} aria-hidden>
-          3-SEAT SOFA / LIVE 3D
-          <br />
-          W 2100 · D 900 · H 820 mm
-          <br />
-          21 PARTS · ASSEMBLED AS YOU SCROLL
-        </div>
+        {/*
+          What is actually being built, named.
+
+          This corner used to carry invented specs ("21 PARTS", a made-up W/D/H) and was
+          switched off anyway, because START skips the wireframe chapter it belonged to.
+          It now names the real best-selling sofa set with its real price, so the piece
+          assembling on screen is one the visitor can click through and buy -- the whole
+          point of the animation being on a shop's front page.
+
+          It stays up for the whole story rather than only the first screen: the sofa is
+          on screen in every chapter, so hiding its name after one scroll just loses the
+          sale.
+        */}
+        {sofa && (
+          <Link href={`/product/${sofa.slug}`} className="hero-piece">
+            <small>Now building · Best seller</small>
+            <b>{sofa.name}</b>
+            <i>
+              {formatPrice(sofa.priceCents)}
+              {sofa.compareAtCents && sofa.compareAtCents > sofa.priceCents && (
+                <s>{formatPrice(sofa.compareAtCents)}</s>
+              )}
+            </i>
+            <u>See this sofa →</u>
+          </Link>
+        )}
 
         <div className="progress-rail above" aria-hidden>
           {["01 The sofa", "02 Material", "03 Daylight"].map((t, i) => (

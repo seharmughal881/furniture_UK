@@ -79,3 +79,40 @@ export async function getReviews(productId: number): Promise<Review[]> {
   );
   return rows;
 }
+
+/**
+ * The sofa set the homepage hero builds: Muscat Furniture's best one.
+ *
+ * "Best" is ranked the way the shop itself ranks: featured first (the pieces the client
+ * puts in "Most selling" and "New arrivals" on Shopify), then price, then how many
+ * photos it has -- a piece the client bothered to shoot ten times is their showcase,
+ * and a one-photo listing is not. `kind` must be set or the hero has no shape to build,
+ * and `modelUrl` is the real scanned model when one has been attached in the admin, so
+ * the hero upgrades from the drawn sofa to the real piece the moment one exists.
+ */
+export type HeroSofa = {
+  slug: string;
+  name: string;
+  priceCents: number;
+  compareAtCents: number | null;
+  colour: string;
+  modelUrl: string | null;
+};
+
+export async function getHeroSofa(): Promise<HeroSofa | null> {
+  "use cache";
+  cacheLife("hours");
+  cacheTag("catalog");
+  const { rows } = await pool.query(
+    `SELECT p.slug, p.name, p.price_cents AS "priceCents", p.compare_at_cents AS "compareAtCents",
+            p.colour,
+            CASE WHEN m.file_name LIKE 'https://%' OR m.file_name LIKE '/%' THEN m.file_name END AS "modelUrl"
+       FROM products p
+       LEFT JOIN product_models m ON m.product_id = p.id AND m.status = 'ready'
+      WHERE p.source = 'muscat' AND p.active AND p.in_stock
+        AND p.category = 'sofas' AND p.kind = 'sofa'
+      ORDER BY p.featured DESC, p.price_cents DESC, coalesce(array_length(p.images, 1), 0) DESC
+      LIMIT 1`,
+  );
+  return rows[0] ?? null;
+}

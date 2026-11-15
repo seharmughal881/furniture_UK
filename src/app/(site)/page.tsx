@@ -8,7 +8,7 @@ import { RoomTiles } from "@/components/home/RoomTiles";
 import { CategoryRail, HowToOrder, ShowroomMap, TrustStrip } from "@/components/home/TrustSections";
 import { RecentlyViewed } from "@/components/product/RecentlyViewed";
 import { ProductGrid } from "@/components/shop/ProductCard";
-import { getMaterials, getProductIndex } from "@/lib/catalog";
+import { getHeroSofa, getMaterials, getProductIndex } from "@/lib/catalog";
 import { getContent } from "@/lib/content/read";
 import type { PlannerTeaserCopy } from "@/components/home/PlannerTeaser";
 import { shopifyImage } from "@/lib/images";
@@ -17,10 +17,11 @@ import { DELIVERY, formatPrice, savingPercent } from "@/lib/types";
 export default async function Home() {
   // The planner teaser is a client component (it drives a WebGL view), so its wording is
   // read here and passed down rather than fetched inside it.
-  const [products, materials, teaser] = await Promise.all([
+  const [products, materials, teaser, heroSofa] = await Promise.all([
     getProductIndex(),
     getMaterials(),
     getContent<PlannerTeaserCopy & { enabled: boolean }>("planner_teaser"),
+    getHeroSofa(),
   ]);
   /*
    * Phones get a photo carousel in place of the 3D story (see HeroMobile), so the
@@ -70,7 +71,7 @@ export default async function Home() {
     <main>
       {/* Phones show the carousel and web shows the 3D story; CSS picks one. */}
       <HeroMobile slides={heroSlides} />
-      <HeroStory materials={materials} />
+      <HeroStory materials={materials} sofa={heroSofa} />
 
       <Marquee
         items={[

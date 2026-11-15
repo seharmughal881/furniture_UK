@@ -22,7 +22,8 @@
     "models:fal": "tsx scripts/models-fal.ts",
     "depth:make": "tsx scripts/make-depth.ts",
     "videos:import": "tsx scripts/import-videos.ts",
-    "videos:apply": "tsx scripts/videos-apply.ts"
+    "videos:apply": "tsx scripts/videos-apply.ts",
+    "brand:logo": "tsx scripts/brand-logo.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",

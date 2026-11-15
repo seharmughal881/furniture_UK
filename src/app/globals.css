@@ -4966,8 +4966,13 @@ html[data-welcomed] .welcome {
 .nav-logo .logo-sub {
   margin-left: -2px;
 }
+/* The official sofa mark (public/brand/muscat-mark-light.png, 1.83:1). Sized by height
+   so it always matches the wordmark next to it; width follows from the artwork, which
+   is why the <img> carries its real pixel dimensions. */
 .logo-mark {
   flex: 0 0 auto;
+  height: 30px;
+  width: auto;
   transition: transform 0.3s cubic-bezier(0.3, 1.6, 0.5, 1);
 }
 .nav-logo:hover .logo-mark {
@@ -5438,8 +5443,7 @@ video {
     gap: 6px;
   }
   .logo-mark {
-    width: 28px;
-    height: 22px;
+    height: 26px;
   }
   .nav-actions {
     gap: 0;
@@ -7099,7 +7103,7 @@ html:not([data-cols]) .density-btn[data-value="4"] .density-icon i {
     display: inline;
   }
   .logo-mark {
-    width: 26px;
+    height: 24px;
   }
 }
 .hero-ghost .short {
@@ -7164,16 +7168,6 @@ html:not([data-cols]) .density-btn[data-value="4"] .density-icon i {
 }
 .nav-logo .logo-sub {
   color: #e6cf9f;
-}
-.logo-mark .cushion,
-.logo-mark .frame {
-  fill: #d9b77a;
-}
-.logo-mark .cushion {
-  fill: #e6cf9f;
-}
-.logo-mark .legs {
-  stroke: #d9b77a;
 }
 .nav-link {
   color: #f2ece2;
@@ -8942,5 +8936,27 @@ input[type="range"] {
 @media (max-width: 720px) {
   .hero-piece {
     display: none;
+  }
+}
+
+/* ---------- the full official logo in the footer ----------
+   The header shows only the sofa mark, because the stacked lock-up cannot stay legible
+   at header height. Here there is room for the whole thing, on the light page
+   background, so the original black-and-red artwork is used rather than the reversed
+   one built for the dark header. */
+.footer-logo {
+  display: block;
+  margin-bottom: 22px;
+}
+
+.footer-logo img {
+  display: block;
+  width: auto;
+  height: 76px;
+}
+
+@media (max-width: 720px) {
+  .footer-logo img {
+    height: 58px;
   }
 }

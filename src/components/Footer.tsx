@@ -18,6 +18,16 @@ export async function Footer() {
   return (
     <footer className="footer" id="visit">
       <div className="footer-top">
+        {/*
+          The complete official logo -- mark, "MUSCAT" and "FURNITURE" together.
+          The header can only carry the sofa (the stacked wordmark goes illegible at
+          60px), so this is the one place on the site that shows the lock-up as Muscat
+          Furniture drew it. The footer is on the light page background, so the original
+          black-and-red artwork is used here rather than the reversed one.
+        */}
+        <Link href="/" className="footer-logo" aria-label={`${COMPANY.tradingName} home`}>
+          <img src="/brand/muscat-logo.png" alt={COMPANY.tradingName} width={560} height={314} loading="lazy" decoding="async" />
+        </Link>
         <div className="footer-big">
           {copy.bigLine}
           <br />

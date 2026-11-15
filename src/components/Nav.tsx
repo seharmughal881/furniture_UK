@@ -288,16 +288,31 @@ function SearchOverlay({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** Brand mark: a red two-seat sofa on a black base, after the Muscat Furniture logo. */
+/**
+ * Muscat Furniture's own sofa mark, cut from their official logo.
+ *
+ * This used to be a hand-drawn SVG "after" the logo -- close, but not the real thing.
+ * It is now their artwork, in the reversed colouring built by scripts/brand-logo.ts:
+ * cream where the original is black, so it reads on this near-black header, with the
+ * official red untouched.
+ *
+ * Only the sofa is used here, not the whole logo. The full lock-up stacks the mark over
+ * "MUSCAT" over "FURNITURE", so in a 60px header the second word lands about five
+ * pixels tall -- a smudge. The name is set in the site's own type beside it instead,
+ * and the complete logo goes in the footer where it has room.
+ */
 function LogoMark() {
   return (
-    <svg className="logo-mark" width="34" height="26" viewBox="0 0 34 26" aria-hidden>
-      {/* colours come from CSS (.logo-mark): gold on the dark header */}
-      <rect className="cushion" x="6" y="2" width="10.5" height="12" rx="4" />
-      <rect className="cushion" x="17.5" y="2" width="10.5" height="12" rx="4" />
-      <path className="frame" d="M2 10.5c0-1.7 3-1.7 3 0v6h24v-6c0-1.7 3-1.7 3 0V19c0 1.2-.8 2-2 2H4c-1.2 0-2-.8-2-2Z" />
-      <path className="legs" d="M5 23.5h3M26 23.5h3" strokeWidth="2.2" strokeLinecap="round" />
-    </svg>
+    <img
+      className="logo-mark"
+      src="/brand/muscat-mark-light.png"
+      alt=""
+      width={200}
+      height={109}
+      // the header is above the fold on every page, so this must not wait
+      fetchPriority="high"
+      decoding="async"
+    />
   );
 }
 

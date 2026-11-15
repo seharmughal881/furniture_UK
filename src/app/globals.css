@@ -3739,6 +3739,58 @@ span.fly-dot {
   animation-timing-function: cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
+/*
+ * Keep the fixed furniture out of the morph.
+ *
+ * A view transition paints its groups in a layer of its own, above every z-index on the
+ * page. So when a product photo flew from its card to the product page, it went over
+ * the header, the announcement bar and the WhatsApp button -- the header has z-index 60
+ * and it made no difference, because nothing on the page can out-rank that layer.
+ * Worse, those three are position: fixed, so being part of the root snapshot made them
+ * slide with the outgoing page instead of staying put.
+ *
+ * Naming them captures each as its own group, so they hold still, and the z-index below
+ * is inside the transition layer, where it does count: the photo now passes underneath
+ * them, exactly as it does when nothing is animating.
+ */
+.announce {
+  view-transition-name: announce;
+}
+
+.nav {
+  view-transition-name: nav;
+}
+
+.wa-float {
+  view-transition-name: wa-float;
+}
+
+::view-transition-group(announce),
+::view-transition-group(nav),
+::view-transition-group(wa-float) {
+  z-index: 100;
+}
+
+/* The header does not cross-fade with the page; it simply stays. */
+::view-transition-old(announce),
+::view-transition-new(announce),
+::view-transition-old(nav),
+::view-transition-new(nav),
+::view-transition-old(wa-float),
+::view-transition-new(wa-float) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+/* Someone who has asked for less movement gets a plain cut, not a flying photo. */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 0.01ms;
+  }
+}
+
 /* keep the WhatsApp button clear of the planner's time slider */
 .planner-time {
   right: 92px;

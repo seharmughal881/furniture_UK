@@ -1,3 +1,5 @@
+import type { CouponKind } from "@/lib/pricing";
+import type { ShippingQuote } from "@/lib/shipping";
 import type { FurnitureKind } from "@/three/furniture";
 
 export type Variant = { title: string; price_cents: number; compare_at_cents: number | null; available: boolean };
@@ -84,8 +86,51 @@ export type CartLine = {
   leadTimeWeeks: number;
 };
 
-/** savingsCents is what the was-prices add up to against what is actually charged. */
-export type Cart = { lines: CartLine[]; count: number; subtotalCents: number; savingsCents: number };
+/** The coupon on a basket, as the storefront needs to show it. */
+export type CartCoupon = {
+  code: string;
+  kind: CouponKind;
+  /** Baisa off the subtotal. 0 for a free-delivery code, which pays for carriage instead. */
+  discountCents: number;
+  freeShipping: boolean;
+};
+
+/**
+ * savingsCents is what the was-prices add up to against what is actually charged, and is
+ * shown for information only. discountCents is money a coupon actually takes off, and is
+ * the one that changes totalCents.
+ */
+export type Cart = {
+  lines: CartLine[];
+  count: number;
+  subtotalCents: number;
+  savingsCents: number;
+  /** The customer's message to the shop; "" when they have not left one. */
+  note: string;
+  coupon: CartCoupon | null;
+  shipping: ShippingQuote | null;
+  /** The governorate the shopper picked in the estimator; "" when they have not. */
+  shipGovernorate: string;
+  discountCents: number;
+  /** Subtotal − discount + delivery. Delivery that is still to be confirmed is excluded. */
+  totalCents: number;
+  deliveryTbc: boolean;
+};
+
+/** A basket with nothing in it, shared so the server and the browser start from the same shape. */
+export const EMPTY_CART: Cart = {
+  lines: [],
+  count: 0,
+  subtotalCents: 0,
+  savingsCents: 0,
+  note: "",
+  coupon: null,
+  shipping: null,
+  shipGovernorate: "",
+  discountCents: 0,
+  totalCents: 0,
+  deliveryTbc: false,
+};
 
 /**
  * One definition of the saving, so the server's figure and the basket's optimistic

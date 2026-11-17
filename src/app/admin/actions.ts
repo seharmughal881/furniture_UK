@@ -4,6 +4,7 @@ import { revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { resetBlock, saveBlock } from "@/lib/admin/content";
+import { createCoupon, deleteCoupon, setCouponActive } from "@/lib/admin/coupons";
 import { addOrderNote, setOrderStatus } from "@/lib/admin/orders";
 import {
   createProduct,
@@ -26,6 +27,7 @@ import { BLOCK_MAP } from "@/lib/content/blocks";
 import { readFields } from "@/lib/content/fields";
 import {
   adminLoginSchema,
+  couponFormSchema,
   orderNoteActionSchema,
   orderStatusActionSchema,
   productFormSchema,
@@ -361,4 +363,48 @@ export async function deleteStoreAction(formData: FormData): Promise<void> {
   if (!Number.isInteger(id)) redirect("/admin/showrooms?error=" + encodeURIComponent("Unknown showroom."));
   const result = await deleteStore(id);
   redirect(result.ok ? "/admin/showrooms?saved=1" : `/admin/showrooms?error=${encodeURIComponent(result.error)}`);
+}
+
+// ---------------------------------------------------------------- discount codes
+
+const COUPONS = "/admin/coupons";
+
+/** Create a discount code from the form on /admin/coupons. */
+export async function createCouponAction(formData: FormData): Promise<void> {
+  const parsed = couponFormSchema.safeParse({
+    code: formData.get("code") ?? "",
+    kind: formData.get("kind") ?? "percent",
+    percent: formData.get("percent") ?? "",
+    amount: formData.get("amount") ?? "",
+    minSubtotal: formData.get("minSubtotal") ?? "",
+    maxDiscount: formData.get("maxDiscount") ?? "",
+    startsAt: formData.get("startsAt") ?? "",
+    endsAt: formData.get("endsAt") ?? "",
+    maxRedemptions: formData.get("maxRedemptions") ?? "",
+    oncePerCustomer: formData.get("oncePerCustomer") ?? false,
+    note: formData.get("note") ?? "",
+  });
+  if (!parsed.success) {
+    // One sentence back in the URL, same as the other form actions here. The field-level
+    // errors are not threaded through because this form is eight inputs on one screen,
+    // and the first problem is enough to point at.
+    const first = Object.values(z.flattenError(parsed.error).fieldErrors)[0]?.[0];
+    redirect(backTo(COUPONS, first ?? "Please check the form and try again."));
+  }
+
+  const result = await createCoupon(parsed.data);
+  redirect(result.ok ? COUPONS : backTo(COUPONS, result.error));
+}
+
+/** Switch a code on or off, or delete one that was never used. */
+export async function couponAction(formData: FormData): Promise<void> {
+  const id = Number(formData.get("id"));
+  const what = String(formData.get("what"));
+  if (!Number.isInteger(id) || id < 1) redirect(backTo(COUPONS, "That code no longer exists."));
+
+  const result =
+    what === "delete"
+      ? await deleteCoupon(id)
+      : await setCouponActive(id, what === "enable");
+  redirect(result.ok ? COUPONS : backTo(COUPONS, result.error));
 }

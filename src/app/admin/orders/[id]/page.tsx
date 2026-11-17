@@ -51,6 +51,12 @@ export default async function OrderDetailPage({ params, searchParams }: PageProp
         </p>
       )}
 
+      {order.customerNote && (
+        <p className="adm-note-from-customer" style={{ marginBottom: 20 }}>
+          <strong>Note from the customer.</strong> {order.customerNote}
+        </p>
+      )}
+
       {order.feeTbc && (
         <p className="adm-tbc" style={{ marginBottom: 20 }}>
           <strong>Delivery fee still to confirm.</strong> This order is under the free-delivery
@@ -100,6 +106,12 @@ export default async function OrderDetailPage({ params, searchParams }: PageProp
                 <span>Subtotal</span>
                 <span>{formatPrice(order.subtotalCents)}</span>
               </div>
+              {order.discountCents > 0 && (
+                <div className="adm-total-row">
+                  <span>Discount {order.couponCode && <code>{order.couponCode}</code>}</span>
+                  <span>−{formatPrice(order.discountCents)}</span>
+                </div>
+              )}
               <div className="adm-total-row">
                 <span>Delivery</span>
                 <span>{order.feeTbc ? "To confirm by phone" : order.shippingCents === 0 ? "Free" : formatPrice(order.shippingCents)}</span>

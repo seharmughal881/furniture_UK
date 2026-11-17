@@ -349,3 +349,66 @@ export const ROLES_FOR: Record<FurnitureKind, ("fabric" | "wood" | "metal")[]> =
   diningTable: ["wood"], diningChair: ["fabric", "wood"], sideboard: ["wood", "metal"], barStool: ["wood", "metal"],
   desk: ["wood", "metal"], officeChair: ["fabric", "metal"],
 };
+
+/**
+ * The pieces a product is made of, for the "View in 3D" tab.
+ *
+ * A product carries one `kind`, which the importer sets to the piece that leads the
+ * listing: a bedroom set is a "bed", a dining set is a "diningTable". That is right for
+ * the planner, where one product is one thing to place, but on the product page it meant
+ * a customer buying a nine-piece bedroom set could only ever look at the bed.
+ *
+ * The rest are read out of the shop's own description rather than guessed from the
+ * category, because the listings say exactly what is in the box -- "Stylish Bed with 2
+ * Side Stands", "Spacious 3.2 Meter Wardrobe", "Elegant Chest of Drawers". Guessing
+ * instead would put a wardrobe beside a seven-piece set that has none, which is a claim
+ * about what the customer is buying, not a display detail.
+ *
+ * Only the distinct *types* are returned. Six identical chairs are one chair to look at,
+ * and the counts in the names ("9-Piece", "+6 Chairs") are left alone.
+ */
+const PIECE_WORDS: [FurnitureKind, RegExp][] = [
+  ["bed", /\bbeds?\b/],
+  ["nightstand", /side ?stand|night ?stand|bedside/],
+  ["wardrobe", /wardrobe|closet/],
+  ["dresser", /dresser|chest of drawers/],
+  ["mirror", /mirror/],
+  ["bench", /bench|stool|ottoman|pouf/],
+  ["diningTable", /dining table/],
+  ["diningChair", /chair/],
+  ["coffeeTable", /coffee table/],
+  ["sideTable", /side table|end table/],
+  ["armchair", /single seater|1 seater|armchair|lounge chair/],
+];
+
+export function piecesOf(
+  name: string,
+  category: string,
+  kind: FurnitureKind | null,
+  /** The listing's bullet points, which is where a set spells out its contents. */
+  details: readonly string[] = [],
+): FurnitureKind[] {
+  if (!kind) return [];
+  const title = name.toLowerCase();
+  // "9-Piece", "6PC", "Sofa Set", "3+3+1+1" -- anything that says more than one thing
+  const isSet = /\bset\b|\bpieces?\b|\b\d+ ?pcs?\b|\d\s*\+\s*\d/.test(title);
+  if (!isSet) return [kind];
+
+  const text = `${title} ${details.join(" ").toLowerCase()}`;
+  const found = PIECE_WORDS.filter(([, re]) => re.test(text)).map(([k]) => k);
+
+  // A dining chair only counts as a dining chair where there is a dining table; in a
+  // bedroom listing "chair" means the stool at the dresser, which is the bench above.
+  const dining = kind === "diningTable" || category === "dining";
+  const usable = found.filter((k) => (k === "diningChair" ? dining : true));
+
+  /*
+   * Sofa sets are the one case the description does not cover -- the bullets talk about
+   * cushioning and legs, never contents. The name does: "3+3+1+1" is two sofas and two
+   * single seaters, and every "Sofa Set" here is sold the same way.
+   */
+  if ((kind === "sofa" || kind === "sectional") && !usable.length) return [kind, "armchair"];
+
+  const ordered = [kind, ...usable.filter((k) => k !== kind)];
+  return [...new Set(ordered)].slice(0, 6);
+}

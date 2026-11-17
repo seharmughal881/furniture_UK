@@ -12,7 +12,9 @@
   --maroon: #7a0b0b; /* header red */
   --blueprint: #0b0b0b;
   --blueprint-line: #ff4d5a;
-  --serif: var(--font-serif), "Times New Roman", serif;
+  /* Kept as a name so the 54 display rules below need no edit, but it is the sans now:
+     the site no longer loads a serif at all. See the note in app/layout.tsx. */
+  --serif: var(--font-sans), system-ui, sans-serif;
   --sans: var(--font-sans), system-ui, sans-serif;
   --mono: var(--font-mono), ui-monospace, monospace;
   --gutter: clamp(16px, 4vw, 56px);
@@ -9011,4 +9013,433 @@ input[type="range"] {
   .footer-logo img {
     height: 58px;
   }
+}
+
+/* ---------- pieces of a set, beside the 3D stage ----------
+   A bedroom set is a bed, a wardrobe, a dresser, a bedside table and a mirror. The
+   product carries one `kind`, so the stage could only ever show the bed; this rail is
+   how the customer reaches the rest. It sits on the right, opposite the camera-view
+   buttons on the left, and each thumbnail is a live view of the same geometry in the
+   fabric and wood currently chosen -- not a picture that could fall out of step. */
+.piece-rail {
+  position: absolute;
+  z-index: 10;
+  right: 16px;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: calc(100% - 120px);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.piece-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.piece-thumb {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  width: 78px;
+  padding: 6px 4px 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.82);
+  backdrop-filter: blur(4px);
+  cursor: pointer;
+  font: inherit;
+  color: var(--muted);
+  transition:
+    border-color 0.2s,
+    color 0.2s,
+    background 0.2s;
+}
+
+.piece-thumb:hover {
+  border-color: rgb(17 17 17 / 0.4);
+  color: var(--ink);
+}
+
+.piece-thumb.on {
+  border-color: var(--accent);
+  color: var(--ink);
+  background: #fff;
+}
+
+/* The <View> is absolutely positioned into this box, so it needs a size of its own. */
+.piece-thumb-view {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 46px;
+}
+
+.piece-thumb small {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  text-align: center;
+}
+
+/* Phones: the rail lies along the bottom instead, clear of the camera buttons on top
+   and the exploded-view slider below. */
+@media (max-width: 999px) {
+  .piece-rail {
+    right: 12px;
+    left: 12px;
+    top: auto;
+    bottom: 76px;
+    flex-direction: row;
+    max-height: none;
+    overflow-x: auto;
+    justify-content: flex-start;
+  }
+  .piece-thumb {
+    flex: 0 0 auto;
+    width: 68px;
+  }
+  .piece-thumb-view {
+    height: 38px;
+  }
+}
+
+/* ---------------------------------------------------------------- basket tools
+   The note / shipping / coupon row at the foot of the basket drawer, and the totals
+   those three can change. Also used on the checkout summary (.summary .discount-row). */
+
+.cart-tools {
+  border-top: 1px solid var(--line);
+  padding: 14px 22px 0;
+}
+.tool-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.tool-tabs button {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 4px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.tool-tabs button:hover {
+  color: var(--ink);
+  background: rgba(17, 17, 17, 0.04);
+}
+.tool-tabs button.on {
+  color: var(--ink);
+  border-color: var(--line);
+  background: rgba(17, 17, 17, 0.05);
+}
+/* A filled dot is the only sign, once a panel is closed again, that a note was left or a
+   code applied. Without it the three tabs look untouched however much was typed. */
+.tool-dot {
+  position: absolute;
+  top: 7px;
+  right: calc(50% - 26px);
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.tool-panel {
+  display: grid;
+  gap: 8px;
+  padding: 12px 0 2px;
+  animation: toolIn 0.18s ease;
+}
+@keyframes toolIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tool-panel {
+    animation: none;
+  }
+}
+.tool-panel .field {
+  display: grid;
+  gap: 5px;
+}
+.tool-panel .field > span {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.tool-panel textarea,
+.tool-panel input,
+.tool-panel select {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg, #fff);
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+}
+.tool-panel textarea {
+  resize: vertical;
+  min-height: 62px;
+}
+.tool-panel input:focus-visible,
+.tool-panel textarea:focus-visible,
+.tool-panel select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.tool-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.tool-row input {
+  flex: 1;
+}
+.tool-row small {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.tool-row small.warn {
+  color: var(--accent);
+}
+.btn.small {
+  padding: 8px 14px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+/* Reserves its line whether or not there is a message, so applying a code does not shunt
+   the Checkout button down the drawer under the shopper's thumb. */
+.tool-msg {
+  min-height: 1.2em;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.tool-msg .err,
+.tool-panel .err {
+  color: var(--accent);
+}
+.tool-quote {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  font-size: 13.5px;
+}
+.tool-quote > div {
+  display: flex;
+  justify-content: space-between;
+}
+.tool-quote dt {
+  color: var(--muted);
+}
+.tool-quote dd {
+  margin: 0;
+  font-weight: 600;
+}
+.coupon-applied {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 14px;
+}
+.coupon-applied b {
+  padding: 4px 10px;
+  border: 1px dashed var(--accent);
+  border-radius: 6px;
+  color: var(--accent);
+  letter-spacing: 0.04em;
+}
+
+/* Only the Total keeps the big serif figure. Before the discount and delivery rows
+   existed, Subtotal was the single strong in this block and inherited it; three
+   26px numbers stacked in a drawer read as three totals. */
+.drawer-foot .row:not(.total-row) strong {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 15px;
+}
+.discount-row {
+  color: var(--accent);
+}
+.discount-row i {
+  font-style: normal;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  opacity: 0.8;
+}
+.summary .discount-row strong {
+  font-weight: 600;
+}
+
+/* The customer's own words, on the admin order page and on the printed delivery note.
+   Boxed rather than set as a paragraph because a driver scanning a sheet in a van has to
+   find it without reading the page. */
+.adm-note-from-customer {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: rgba(200, 16, 46, 0.04);
+  font-size: 14px;
+}
+.adm-note-customer {
+  margin: 10px 0;
+  padding: 8px 10px;
+  border: 1px dashed #999;
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+
+/* ---------------------------------------------------------------- money and UI type
+   Instrument Serif ships ONLY Regular and Italic -- there is no bold in the family. So
+   every <strong> that asked for it, the product price included, either rendered at 400 or
+   got a synthesised fake bold from the browser. That is why OMR 150.000 looked lighter
+   than the body text next to it.
+
+   It is also a display face: its own documentation puts it at 24px and up, where the high
+   stroke contrast reads as elegance. At 15px in a basket line the thin horizontals simply
+   disappear.
+
+   So anything a customer reads to make a decision -- prices, totals, specs, basket lines --
+   moves to the sans, which has a real weight range. Headlines keep the serif.
+
+   tabular-nums matters more than it looks on a shop: with proportional figures the "1" is
+   narrower than the "0", so OMR 150.000 and OMR 300.000 stacked in a basket do not line
+   up at the decimal point and the column looks broken. */
+
+.price-row strong,
+.total-row strong,
+.total strong,
+.spec strong,
+.ticket-stub strong,
+.manifesto .num,
+.rv-seal-n,
+.rv-avatar,
+.line-name,
+.mhero-tag b,
+.mega-feature strong,
+.why .trust-item strong,
+.mobile-menu nav a {
+  font-family: var(--sans);
+}
+
+/* The price is the single most-read thing on a product page. It gets a real weight and a
+   tighter fit so it still reads as the headline figure it was before. */
+.price-row strong {
+  font-weight: 650;
+  font-size: 38px;
+  letter-spacing: -0.02em;
+}
+.line-name,
+.mhero-tag b,
+.mega-feature strong,
+.why .trust-item strong {
+  font-weight: 600;
+}
+.total-row strong,
+.total strong {
+  font-weight: 650;
+}
+
+/* Every figure on the site, wherever it is set, lines up in a column. */
+.price-row strong,
+.price-row s,
+.price-row del,
+.sum-price,
+.drawer-foot .row,
+.summary .row,
+.adm-num,
+.tool-quote dd,
+.adm-total-row,
+.spec strong,
+.total-row strong,
+.total strong {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+
+/* ---------------------------------------------------------------- display headings
+   These rules all asked for the serif at weight 400, which is how a high-contrast serif
+   wants to be set. A grotesque at 400 and 88px reads as thin and loose instead, so the
+   same headings now take a real weight and the negative tracking large sans type needs.
+
+   Listed explicitly rather than applied to h1/h2 globally: these are exactly the rules
+   that used to say `font-family: var(--serif)`, so the change reaches the headings that
+   were designed as display type and nothing else. */
+
+.chapter h2,
+.clock,
+.section-head h2,
+.card-body h3,
+.teaser-copy h2,
+.product-panel h1,
+.planner-side h1,
+.nav-logo,
+.drawer-head h2,
+.drawer-foot .row strong,
+.shop-head h1,
+.empty h1,
+.prose h1,
+.prose h2,
+.related h2,
+.big-rating,
+.rv-quote::before,
+.order h1,
+.summary h2,
+.order-grid h2,
+.footer-big,
+.room-meta h3,
+.nav-logo .logo-sub,
+.page-title,
+.store-card h2,
+.marquee-item,
+.qv-info h2,
+.how-step strong,
+.how-num,
+.map-copy h2,
+.welcome-title,
+.thanks h1,
+.cc-num,
+.cc-info strong,
+.layers-total strong,
+.why-title,
+.reel-title,
+.showroom-intro h1,
+.showroom-others h2,
+.mhero-copy h1,
+.hero-piece b {
+  font-weight: 700;
+  letter-spacing: -0.021em;
+}
+
+/* A word mark wants to be tighter and heavier than a sentence. */
+.nav-logo {
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+/* Running text in a marquee or a pull-quote is not a headline; it only shared the face. */
+.marquee-item,
+.rv-quote::before {
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }

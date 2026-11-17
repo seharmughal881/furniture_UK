@@ -406,3 +406,154 @@ CREATE TABLE IF NOT EXISTS site_content (
 -- Empty string, never NULL, so the storefront's "does this product have a video?" test is
 -- a plain truthiness check and never has to worry about three states.
 ALTER TABLE products ADD COLUMN IF NOT EXISTS video_url TEXT NOT NULL DEFAULT '';
+
+-- ---------------------------------------------------------------- v12: cart note, shipping estimate, coupons
+-- The three things the basket drawer can now do, mirroring what customers already expect
+-- from the shops they buy from: leave a note with the order, check what delivery costs
+-- before committing, and redeem a discount code.
+--
+-- All three hang off `carts` rather than being held in the browser, for one reason: the
+-- price charged must be computed from rows the customer cannot edit. A coupon kept in
+-- localStorage is a coupon the customer can mint.
+
+-- A free-text message the customer attaches to the basket ("please call before 6pm",
+-- "deliver to the villa gate"). Empty string, never NULL, so every read is a plain
+-- truthiness test -- the same convention products.video_url uses.
+ALTER TABLE carts  ADD COLUMN IF NOT EXISTS note TEXT NOT NULL DEFAULT '';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_note TEXT NOT NULL DEFAULT '';
+
+-- The governorate the shopper picked in the drawer's shipping estimator. Remembered so
+-- the checkout form can prefill it, and so the quote survives a page reload. It is only
+-- ever a hint: /api/checkout recomputes delivery from the address actually submitted.
+ALTER TABLE carts ADD COLUMN IF NOT EXISTS ship_governorate TEXT NOT NULL DEFAULT '';
+
+-- Delivery terms per governorate.
+--
+-- A table rather than a constant, because these are the client's commercial terms and
+-- they differ by distance: Musandam is an exclave reached through the UAE, Al Wusta is
+-- mostly desert, and both cost more to reach than Bawshar. The storefront previously had
+-- one nationwide rule (free over OMR 75, otherwise "we'll confirm by phone"), which is
+-- what every row is seeded with, so behaviour does not change until the owner edits a row.
+--
+-- fee_cents NULL is meaningful and is the seeded value: "we cannot quote this from a
+-- table, the team confirms it by phone". That is the client's actual published policy --
+-- the fee depends on weight as well as destination -- so inventing a number here would
+-- put a price on the website that the business has never agreed to charge.
+CREATE TABLE IF NOT EXISTS shipping_zones (
+  governorate     TEXT PRIMARY KEY,
+  fee_cents       INTEGER,
+  free_over_cents INTEGER NOT NULL DEFAULT 75000,
+  min_days        INTEGER NOT NULL DEFAULT 4,
+  max_days        INTEGER NOT NULL DEFAULT 6,
+  active          BOOLEAN NOT NULL DEFAULT true,
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE shipping_zones DROP CONSTRAINT IF EXISTS shipping_zones_sane_check;
+ALTER TABLE shipping_zones ADD  CONSTRAINT shipping_zones_sane_check
+  CHECK (
+    (fee_cents IS NULL OR (fee_cents >= 0 AND fee_cents <= 100000)) AND
+    free_over_cents >= 0 AND
+    min_days >= 0 AND max_days >= min_days AND max_days <= 90
+  );
+
+INSERT INTO shipping_zones (governorate) VALUES
+  ('Muscat'), ('Dhofar'), ('Musandam'), ('Al Buraimi'), ('Ad Dakhiliyah'),
+  ('North Al Batinah'), ('South Al Batinah'), ('South Ash Sharqiyah'),
+  ('North Ash Sharqiyah'), ('Ad Dhahirah'), ('Al Wusta')
+ON CONFLICT (governorate) DO NOTHING;
+
+-- Discount codes.
+--
+-- `code` is stored already upper-cased and is the primary key of the lookup, so there is
+-- exactly one spelling of a code in the database and "welcome10" and "WELCOME10" cannot
+-- become two different coupons with two different budgets.
+CREATE TABLE IF NOT EXISTS coupons (
+  id                 SERIAL PRIMARY KEY,
+  code               TEXT NOT NULL,
+  kind               TEXT NOT NULL,
+  -- percent: 1-100. fixed: baisa off. free_shipping: unused, kept 0.
+  value              INTEGER NOT NULL DEFAULT 0,
+  -- The basket must reach this before the code is accepted (0 = no minimum).
+  min_subtotal_cents INTEGER NOT NULL DEFAULT 0,
+  -- A percentage discount on a bedroom set can be a lot of money; this caps the damage.
+  -- NULL = uncapped.
+  max_discount_cents INTEGER,
+  starts_at          TIMESTAMPTZ,
+  ends_at            TIMESTAMPTZ,
+  -- Total redemptions allowed across all customers. NULL = unlimited.
+  max_redemptions    INTEGER,
+  -- Incremented inside the checkout transaction, never when a code is merely applied to a
+  -- basket -- see redeemCoupon() in src/lib/coupons.ts.
+  redemptions        INTEGER NOT NULL DEFAULT 0,
+  -- When true a given phone number may redeem this code once, ever.
+  once_per_customer  BOOLEAN NOT NULL DEFAULT false,
+  active             BOOLEAN NOT NULL DEFAULT true,
+  note               TEXT NOT NULL DEFAULT '',
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by         INTEGER REFERENCES admin_users(id) ON DELETE SET NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS coupons_code_key ON coupons(code);
+ALTER TABLE coupons DROP CONSTRAINT IF EXISTS coupons_kind_check;
+ALTER TABLE coupons ADD  CONSTRAINT coupons_kind_check
+  CHECK (kind IN ('percent', 'fixed', 'free_shipping'));
+-- The value must make sense for the kind. A 150% discount or a negative one would pay the
+-- customer to shop here, and neither the API nor the admin form is the last line of
+-- defence -- this is.
+ALTER TABLE coupons DROP CONSTRAINT IF EXISTS coupons_value_check;
+ALTER TABLE coupons ADD  CONSTRAINT coupons_value_check
+  CHECK (
+    (kind = 'percent'       AND value BETWEEN 1 AND 100) OR
+    (kind = 'fixed'         AND value BETWEEN 1 AND 100000000) OR
+    (kind = 'free_shipping' AND value = 0)
+  );
+ALTER TABLE coupons DROP CONSTRAINT IF EXISTS coupons_window_check;
+ALTER TABLE coupons ADD  CONSTRAINT coupons_window_check
+  CHECK (starts_at IS NULL OR ends_at IS NULL OR ends_at > starts_at);
+ALTER TABLE coupons DROP CONSTRAINT IF EXISTS coupons_limits_check;
+ALTER TABLE coupons ADD  CONSTRAINT coupons_limits_check
+  CHECK (
+    min_subtotal_cents >= 0 AND
+    redemptions >= 0 AND
+    (max_redemptions IS NULL OR max_redemptions >= 1) AND
+    (max_discount_cents IS NULL OR max_discount_cents >= 1)
+  );
+
+-- ON DELETE SET NULL, not CASCADE: deleting a finished promotion must never delete the
+-- basket it was attached to.
+ALTER TABLE carts ADD COLUMN IF NOT EXISTS coupon_id INTEGER REFERENCES coupons(id) ON DELETE SET NULL;
+
+-- Orders keep their own copy of the code and the money taken off. The coupon row may be
+-- edited or deleted next month; what this customer was actually charged may not change.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS coupon_code    TEXT NOT NULL DEFAULT '';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_cents INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_discount_check;
+ALTER TABLE orders ADD  CONSTRAINT orders_discount_check
+  CHECK (discount_cents >= 0 AND discount_cents <= subtotal_cents);
+
+-- One row per successful redemption: the audit trail behind coupons.redemptions, and what
+-- makes once_per_customer enforceable.
+--
+-- phone_hash, not the phone number. Reusing bucketFor() from rate-limit.ts means the same
+-- salted SHA-256 as everywhere else in this codebase, so a leak of this table reveals no
+-- customer's number, and the uniqueness check still works because the same number always
+-- hashes the same way.
+CREATE TABLE IF NOT EXISTS coupon_redemptions (
+  id             SERIAL PRIMARY KEY,
+  coupon_id      INTEGER NOT NULL REFERENCES coupons(id) ON DELETE CASCADE,
+  order_id       UUID    NOT NULL REFERENCES orders(id)  ON DELETE CASCADE,
+  phone_hash     TEXT NOT NULL,
+  discount_cents INTEGER NOT NULL,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS coupon_redemptions_coupon_idx ON coupon_redemptions(coupon_id, created_at DESC);
+-- Partial, and the partiality is the whole mechanism.
+--
+-- phone_hash is written ONLY for a coupon with once_per_customer set; every other
+-- redemption stores '' and is therefore outside this index. A unique index over every row
+-- would wrongly stop a repeat customer using a general "10% off everything" code twice,
+-- and storing the hash regardless would keep a per-customer record this shop has no use
+-- for. So the index enforces the rule for the coupons that asked for it, and the rows for
+-- the rest hold no customer identifier at all.
+CREATE UNIQUE INDEX IF NOT EXISTS coupon_redemptions_once_key
+  ON coupon_redemptions(coupon_id, phone_hash)
+  WHERE phone_hash <> '';

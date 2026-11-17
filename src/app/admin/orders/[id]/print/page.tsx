@@ -59,6 +59,12 @@ function Copy({ order, label }: { order: OrderDetail; label: string }) {
         </div>
       </div>
 
+      {order.customerNote && (
+        <div className="adm-note-customer">
+          <strong>Customer&apos;s note:</strong> {order.customerNote}
+        </div>
+      )}
+
       <div className="adm-note-collect">
         <span>
           Cash to collect on delivery

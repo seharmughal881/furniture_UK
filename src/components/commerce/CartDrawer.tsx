@@ -5,6 +5,8 @@ import { useEffect, useRef } from "react";
 import { whatsappLink } from "@/lib/company";
 import { DELIVERY, formatPrice, type CartLine } from "@/lib/types";
 import { shopifyImage } from "@/lib/images";
+import { describeQuote } from "@/lib/shipping";
+import { CartTools } from "./CartTools";
 import { useCart } from "./CartProvider";
 
 export function ConfigDots({ line }: { line: CartLine }) {
@@ -117,12 +119,42 @@ export function CartDrawer() {
                 </li>
               ))}
             </ul>
+            <CartTools />
             <div className="drawer-foot">
               <div className="row">
                 <span>Subtotal</span>
                 <strong>{formatPrice(cart.subtotalCents)}</strong>
               </div>
-              <p className="hint">Prices include 5% VAT. Pay cash on delivery.</p>
+              {cart.coupon && cart.discountCents > 0 && (
+                <div className="row discount-row">
+                  <span>
+                    Discount <i>{cart.coupon.code}</i>
+                  </span>
+                  <strong>−{formatPrice(cart.discountCents)}</strong>
+                </div>
+              )}
+              {/* A free-delivery code takes nothing off the goods, so it would otherwise
+                  leave no trace in the totals and look as though it had not worked. */}
+              {cart.coupon?.freeShipping && (
+                <div className="row discount-row">
+                  <span>
+                    Delivery <i>{cart.coupon.code}</i>
+                  </span>
+                  <strong>Free</strong>
+                </div>
+              )}
+              <div className="row">
+                <span>Delivery{cart.shipGovernorate ? ` to ${cart.shipGovernorate}` : ""}</span>
+                <span>{describeQuote(cart.shipping, formatPrice)}</span>
+              </div>
+              <div className="row total-row">
+                <span>Total</span>
+                <strong>{formatPrice(cart.totalCents)}</strong>
+              </div>
+              <p className="hint">
+                Prices include 5% VAT. Pay cash on delivery.
+                {cart.deliveryTbc && " Delivery is confirmed by phone before dispatch."}
+              </p>
               <Link href="/checkout" className="btn solid wide" onClick={() => setOpen(false)}>
                 Checkout →
               </Link>
@@ -133,7 +165,11 @@ export function CartDrawer() {
                     cart.lines
                       .map((l) => `• ${l.quantity} × ${l.name}${l.variant ? ` (${l.variant})` : ""} — ${formatPrice(l.unitPriceCents * l.quantity)}`)
                       .join("\n") +
-                    `\nTotal: ${formatPrice(cart.subtotalCents)}`,
+                    (cart.coupon && cart.discountCents > 0
+                      ? `\nDiscount (${cart.coupon.code}): −${formatPrice(cart.discountCents)}`
+                      : "") +
+                    (cart.note ? `\nNote: ${cart.note}` : "") +
+                    `\nTotal: ${formatPrice(cart.totalCents)}`,
                 )}
                 target="_blank"
                 rel="noopener noreferrer"

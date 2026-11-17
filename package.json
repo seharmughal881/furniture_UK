@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "node --conditions react-server --import tsx --test \"tests/**/*.test.ts\"",
+    "test:unit": "node --import tsx --test \"tests/pricing.test.ts\" \"tests/shipping.test.ts\"",
     "db:setup": "tsx scripts/db-setup.ts",
     "db:migrate": "tsx scripts/db-migrate.ts",
     "db:cleanup": "tsx scripts/db-cleanup.ts",

@@ -21,6 +21,7 @@ export async function AdminHeader() {
             <Link href="/admin/orders">Orders</Link>
             <Link href="/admin/customers">Customers</Link>
             <Link href="/admin/products">Products</Link>
+            <Link href="/admin/coupons">Codes</Link>
             <Link href="/admin/content">Content</Link>
             <Link href="/admin/reviews">Reviews</Link>
             <Link href="/admin/inquiries">Enquiries</Link>

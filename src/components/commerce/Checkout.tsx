@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { GOVERNORATES } from "@/lib/catalog-data";
 import { shopifyImage } from "@/lib/images";
-import { DELIVERY, deliveryFee, formatPrice, vatIncluded } from "@/lib/types";
+import { describeQuote } from "@/lib/shipping";
+import { DELIVERY, formatPrice, vatIncluded } from "@/lib/types";
 import { ConfigDots } from "./CartDrawer";
 import { useCart } from "./CartProvider";
 import { LockIcon, PaymentMarks } from "./PaymentMarks";
@@ -17,7 +18,7 @@ import { LockIcon, PaymentMarks } from "./PaymentMarks";
  * agrees: checkoutSchema still accepts "cod" only, so a forged request cannot get past it.
  */
 export function Checkout({ cardEnabled = false }: { cardEnabled?: boolean }) {
-  const { cart, refresh } = useCart();
+  const { cart, refresh, setGovernorate } = useCart();
   const router = useRouter();
   const [state, setState] = useState<"idle" | "sending">("idle");
   const [errors, setErrors] = useState<Record<string, string[]> | null>(null);
@@ -25,8 +26,28 @@ export function Checkout({ cardEnabled = false }: { cardEnabled?: boolean }) {
   const [method, setMethod] = useState<"card" | "cod">(cardEnabled ? "card" : "cod");
   const [billing, setBilling] = useState<"same" | "other">("same");
 
-  const fee = deliveryFee(cart.subtotalCents);
-  const total = cart.subtotalCents + (fee ?? 0);
+  /*
+   * The governorate on this form, not the one from the basket's estimator, is what
+   * delivery is quoted against -- and it is pushed to the server as it changes so the
+   * summary beside the form is produced by exactly the code that will price the order.
+   * Nothing about the fee is computed in the browser.
+   */
+  const [gov, setGov] = useState("");
+  const chosen = gov || cart.shipGovernorate || "Muscat";
+  const synced = useRef(false);
+
+  useEffect(() => {
+    // Once, when the basket first arrives: if the shopper never opened the estimator the
+    // server is still on nationwide terms while this form already displays "Muscat", so
+    // tell it what the form is showing. Without this the quote and the selection could
+    // disagree the moment the owner gives Muscat its own rate.
+    if (synced.current || cart.lines.length === 0 || cart.shipGovernorate) return;
+    synced.current = true;
+    void setGovernorate(chosen);
+  }, [cart.lines.length, cart.shipGovernorate, chosen, setGovernorate]);
+
+  const quote = cart.shipping;
+  const total = cart.totalCents;
   const saved = cart.savingsCents;
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
@@ -47,6 +68,10 @@ export function Checkout({ cardEnabled = false }: { cardEnabled?: boolean }) {
       return;
     }
     setState("idle");
+    // A code that died between the basket and this button: the server has already
+    // detached it, so pull the basket again and let the summary show the real total
+    // beside the explanation rather than the discounted one they can no longer have.
+    if (body?.couponRejected) await refresh();
     if (body?.issues) setErrors(body.issues);
     else setMessage(body?.error ?? "Something went wrong. Please try again.");
   }
@@ -105,7 +130,15 @@ export function Checkout({ cardEnabled = false }: { cardEnabled?: boolean }) {
           <div className="field-row">
             <label className={`field ${errors?.governorate ? "invalid" : ""}`}>
               <span>Governorate</span>
-              <select name="governorate" required defaultValue="Muscat">
+              <select
+                name="governorate"
+                required
+                value={chosen}
+                onChange={(e) => {
+                  setGov(e.target.value);
+                  void setGovernorate(e.target.value);
+                }}
+              >
                 {GOVERNORATES.map((g) => (
                   <option key={g}>{g}</option>
                 ))}
@@ -121,6 +154,14 @@ export function Checkout({ cardEnabled = false }: { cardEnabled?: boolean }) {
           })}
           {field("building", "Building / house number and flat (optional)", { autoComplete: "address-line2" })}
           {field("landmark", "Nearest landmark (optional)", { placeholder: "e.g. behind Lulu Hypermarket" })}
+          <label className={`field ${errors?.note ? "invalid" : ""}`}>
+            <span>Note for the delivery team (optional)</span>
+            {/* defaultValue, not value: this is the one place the note is edited on this
+                page, so letting the browser own it avoids fighting the basket's copy
+                while someone is mid-sentence. It is submitted with the form. */}
+            <textarea name="note" rows={2} maxLength={500} defaultValue={cart.note} placeholder="e.g. Please call before 6pm" />
+            {err("note")}
+          </label>
         </fieldset>
 
         <fieldset>
@@ -253,14 +294,22 @@ export function Checkout({ cardEnabled = false }: { cardEnabled?: boolean }) {
           <span>Subtotal</span>
           <span>{formatPrice(cart.subtotalCents)}</span>
         </div>
+        {cart.coupon && cart.discountCents > 0 && (
+          <div className="row discount-row">
+            <span>
+              Discount <i>{cart.coupon.code}</i>
+            </span>
+            <strong>−{formatPrice(cart.discountCents)}</strong>
+          </div>
+        )}
         <div className="row">
-          <span>Delivery</span>
-          <span>{fee === 0 ? "Free" : "Confirmed by phone"}</span>
+          <span>Delivery to {chosen}</span>
+          <span>{describeQuote(quote, formatPrice)}</span>
         </div>
-        {fee === null && (
+        {quote?.available && quote.remainingForFreeCents > 0 && (
           <p className="hint">
-            Add {formatPrice(DELIVERY.freeOverCents - cart.subtotalCents)} more for free delivery. Otherwise the fee
-            depends on size and location — we tell you before dispatch.
+            Add {formatPrice(quote.remainingForFreeCents)} more for free delivery. Otherwise the fee depends on size and
+            location — we tell you before dispatch.
           </p>
         )}
         <div className="row total-row">

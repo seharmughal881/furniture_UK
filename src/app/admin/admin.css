@@ -1086,3 +1086,58 @@ a.adm-stat:hover {
   background: rgb(255 255 255 / 0.12);
   border-color: rgb(255 255 255 / 0.5);
 }
+
+/* ---------------------------------------------------------------- discount codes */
+
+/* .adm-field carries page padding for the order screen; inside a form card it is just a
+   field, so the padding is dropped rather than fought with margins. */
+.coupon-form .adm-field {
+  padding: 0;
+}
+.coupon-form input[type="datetime-local"] {
+  width: 100%;
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--adm-line);
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+}
+.coupon-form .adm-field small {
+  font-size: 12px;
+  color: var(--adm-muted);
+}
+.adm-field-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+.adm-field.adm-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  grid-auto-flow: column;
+  justify-content: start;
+  align-self: end;
+  padding-bottom: 10px;
+}
+.adm-field.adm-check input {
+  width: auto;
+}
+.adm-field.adm-check > span {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+  margin: 0;
+}
+/* A switched-off or finished code stays in the table -- its history still matters -- but
+   must not read as live at a glance. */
+.adm-row-off {
+  opacity: 0.55;
+}
+.adm-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}

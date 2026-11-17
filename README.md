@@ -107,6 +107,7 @@ cp .env.example .env.local      # set DATABASE_URL to your PostgreSQL
 npm run db:setup                # creates tables + loads the seed catalogue (safe to re-run)
 npm run import:muscat           # loads the real 632-product catalogue AND the showrooms
 npm run dev                     # http://localhost:3000
+npm test                        # pricing, delivery and coupon rules (see below)
 ```
 
 `import:muscat` is not optional for a fresh database: it is the only thing that fills the
@@ -132,6 +133,26 @@ against your deployed database.
 
 Housekeeping: `npm run db:cleanup` drops expired rate-limit buckets and sessions, abandoned
 baskets and unconfirmed newsletter sign-ups. Run it on a daily schedule in production.
+
+## Tests
+
+```bash
+npm test        # everything: pure rules + the coupon rules against DATABASE_URL
+npm run test:unit   # just the pure ones, no database needed
+```
+
+Node's own test runner under `tsx` — no Jest, no Vitest, nothing new in `package.json`
+beyond the two scripts. `--conditions react-server` is in the `test` script because
+`src/lib/db.ts` and its callers import `server-only`, whose default export throws outside
+a React Server Component; Next supplies that condition in the app and the runner has to
+supply it too.
+
+`tests/pricing.test.ts` and `tests/shipping.test.ts` are pure: rounding, clamping,
+expiry boundaries, free-delivery codes, nonsense input. `tests/coupons.db.test.ts` talks
+to the database, because the things worth proving there cannot be proved any other way —
+two shoppers racing for the last redemption of a code, and two tabs of the same shopper
+racing the one-per-customer rule. It creates everything it needs under a `ZZTEST…` prefix
+and deletes it afterwards.
 
 ## What's on screen
 
@@ -171,8 +192,31 @@ leftovers from it.
   on delivery; the team phones to confirm. Card payments are stubbed for AmwalPay (all
   cards, Apple Pay, Bank Muscat EPP) — see the `AMWALPAY_*` keys in `.env.example`; with
   `AMWALPAY_MERCHANT_ID` empty the card option shows as "Coming soon" and cannot be chosen.
-- **Delivery fee:** free over OMR 75; below that `deliveryFee()` returns `null`, the order is
-  flagged `delivery_fee_tbc` and the fee is agreed by phone.
+- **Delivery fee:** priced per governorate from `shipping_zones`. Every row is seeded with
+  the published nationwide policy — free over OMR 75, otherwise `fee_cents` is `NULL`, the
+  order is flagged `delivery_fee_tbc` and the fee is agreed by phone — so nothing changes
+  until the owner gives a governorate its own rate. **These are the client's commercial
+  terms, not ours: the real per-governorate fees and lead times still have to come from
+  them.** The basket's estimator is only a preview; `/api/checkout` re-prices from the
+  governorate on the order form, so estimating for Muscat and typing a Musandam address
+  charges for Musandam.
+- **Order notes:** `carts.note` -> `orders.customer_note`, shown on the admin order page,
+  on the printed delivery note and back to the customer on their confirmation.
+- **Discount codes:** `coupons` + `coupon_redemptions`, managed at `/admin/coupons`.
+  Percentage, fixed amount or free delivery, with an optional minimum spend, date window,
+  total-uses cap and a one-per-phone-number rule.
+
+  Applying a code to a basket is a **preview and commits nothing** — no counter moves
+  until the order is placed, so adding and removing a code in a loop cannot drain a
+  promotion. The redemption happens inside the checkout transaction, guarded three ways:
+  a `SELECT ... FOR UPDATE` on the coupon row, a conditional `UPDATE` that re-tests the
+  cap at the moment of writing, and a partial unique index for the per-customer rule. A
+  code that stops qualifying between the basket and the button **fails the checkout**
+  rather than being dropped, so nobody is charged more than the page showed them.
+
+  `coupon_redemptions.phone_hash` is a salted SHA-256 of the last 8 digits, and is only
+  written for codes that use the one-per-customer rule; every other redemption stores `''`
+  and keeps no customer identifier at all.
 - **Stock:** `products.stock_qty` drives the `in_stock` flag but is never decremented when an
   order is placed, so it does not reserve anything. Decide whether that is wanted before
   relying on the back-office stock figures.

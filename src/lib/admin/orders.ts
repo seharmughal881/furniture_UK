@@ -152,6 +152,12 @@ export type OrderDetail = {
   shippingCents: number;
   totalCents: number;
   vatCents: number;
+  /** Money a discount code took off; 0 when none was used. */
+  discountCents: number;
+  /** The code as it was at the time of the order, "" when none. */
+  couponCode: string;
+  /** What the customer asked for in their own words; "" when they said nothing. */
+  customerNote: string;
   createdAt: string;
   items: OrderLine[];
   events: OrderEvent[];
@@ -168,6 +174,8 @@ export async function getOrder(id: string): Promise<OrderDetail | null> {
             o.payment_method AS "paymentMethod", o.delivery_fee_tbc AS "feeTbc",
             o.subtotal_cents AS "subtotalCents", o.shipping_cents AS "shippingCents",
             o.total_cents AS "totalCents", o.vat_cents AS "vatCents",
+            o.discount_cents AS "discountCents", o.coupon_code AS "couponCode",
+            o.customer_note AS "customerNote",
             to_char(o.created_at AT TIME ZONE 'Asia/Muscat', 'DD Mon YYYY, HH24:MI') AS "createdAt",
             COALESCE((SELECT json_agg(json_build_object(
                         'name', i.product_name, 'qty', i.quantity,

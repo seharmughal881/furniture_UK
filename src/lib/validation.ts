@@ -63,6 +63,39 @@ export const addToCartSchema = z.object({
 
 export const updateCartItemSchema = z.object({ quantity: z.number().int().min(0).max(20) });
 
+/**
+ * The customer's note on the basket.
+ *
+ * Control characters are stripped rather than rejected, because they almost never come
+ * from a person: they arrive pasted from a PDF or a spreadsheet, and refusing the whole
+ * note over an invisible character would be baffling. Newlines survive -- a delivery note
+ * with an address on three lines is normal. Runs of blank lines collapse so a note cannot
+ * be padded into a wall of whitespace on the packing slip.
+ *
+ * The note is stored and displayed as text only; React escapes it on the storefront and
+ * in the admin, and the print view does the same. Nothing here needs to strip HTML, and
+ * doing so would mangle a legitimate note containing "<" or "&".
+ */
+export const noteField = z
+  .string()
+  .max(2000, "That note is too long")
+  .transform((v) => v.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ""))
+  .transform((v) => v.replace(/\n{3,}/g, "\n\n").trim())
+  .refine((v) => v.length <= 500, "Please keep your note under 500 characters");
+
+export const cartNoteSchema = z.object({ note: noteField.default("") });
+
+/** "" clears the estimate and returns the basket to the nationwide terms. */
+export const cartShippingSchema = z.object({
+  governorate: z.enum(GOVERNORATES).or(z.literal("")).default(""),
+});
+
+/**
+ * A code as typed. Normalising (upper-casing, removing spaces) happens in pricing.ts, so
+ * this only has to stop something absurdly long reaching the database.
+ */
+export const cartCouponSchema = z.object({ code: z.string().trim().min(1, "Enter a code").max(40) });
+
 // Omani numbers: 8 digits, mobiles start with 7 or 9, landlines with 2; optional +968 / 00968.
 const OMAN_PHONE = /^(?:\+?968|00968)?\s?[279]\d{3}\s?\d{4}$/;
 
@@ -76,6 +109,8 @@ export const checkoutSchema = z.object({
   building: z.string().trim().max(200).default(""),
   landmark: z.string().trim().max(300).default(""),
   paymentMethod: z.enum(["cod"]).default("cod"),
+  /** Optional: when present it replaces whatever note the basket already carried. */
+  note: noteField.optional(),
 });
 
 export const reviewSchema = z.object({
@@ -315,3 +350,86 @@ export const productSearchSchema = z.object({
   sort: z.enum(["recent", "name", "price-asc", "price-desc", "featured"]).optional(),
   page: z.coerce.number().int().min(1).max(100000).optional(),
 });
+
+// ---------------------------------------------------------------- admin: discount codes
+
+/**
+ * Oman keeps a fixed UTC+4 all year and has never observed daylight saving, so a
+ * datetime-local value can be pinned to +04:00 without a timezone library.
+ *
+ * This matters more than it looks. The input gives "2026-11-20T18:00" with no zone at
+ * all; parsed on a server set to UTC -- which is what Vercel runs -- that becomes 22:00 in
+ * Muscat. An owner ending a promotion at 6pm would find it still running through the
+ * evening, and starting one at 9am would find it dead until lunchtime.
+ */
+const muscatInstant = (s: string): string | null => {
+  if (!s) return null;
+  const d = new Date(`${s}:00+04:00`);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+};
+
+const dateField = z
+  .string()
+  .trim()
+  .max(40)
+  .default("")
+  .transform(muscatInstant);
+
+export const couponFormSchema = z
+  .object({
+    code: z
+      .string()
+      .trim()
+      .min(2, "A code needs at least two characters")
+      .max(32, "That code is too long")
+      .transform((s) => s.replace(/\s+/g, "").toUpperCase())
+      .refine((s) => /^[A-Z0-9][A-Z0-9_-]{1,31}$/.test(s), "Use letters, numbers, hyphens and underscores only"),
+    kind: z.enum(["percent", "fixed", "free_shipping"]),
+    /** Only read when kind is "percent". */
+    percent: z.string().trim().default(""),
+    /** Only read when kind is "fixed"; typed in rials like every other price in the admin. */
+    amount: z.string().trim().default(""),
+    minSubtotal: moneyOptional("Minimum spend"),
+    maxDiscount: moneyOptional("Maximum discount"),
+    startsAt: dateField,
+    endsAt: dateField,
+    maxRedemptions: optionalInt("Total uses", 1_000_000),
+    oncePerCustomer: checkbox,
+    note: z.string().trim().max(200).default(""),
+  })
+  .superRefine((input, ctx) => {
+    if (input.kind === "percent") {
+      const n = Number(input.percent);
+      if (!/^\d{1,3}$/.test(input.percent) || n < 1 || n > 100) {
+        ctx.addIssue({ code: "custom", path: ["percent"], message: "Enter a whole percentage between 1 and 100" });
+      }
+    }
+    if (input.kind === "fixed" && !/^\d{1,7}(\.\d{1,3})?$/.test(input.amount.replace(/[\s,]/g, ""))) {
+      ctx.addIssue({ code: "custom", path: ["amount"], message: "Enter an amount like 5.000" });
+    }
+    // A cap on a fixed amount is meaningless -- the amount is already the cap -- and a cap
+    // below the amount would quietly pay out less than the code promises.
+    if (input.kind !== "percent" && input.maxDiscount !== null) {
+      ctx.addIssue({ code: "custom", path: ["maxDiscount"], message: "A maximum only applies to a percentage code" });
+    }
+    if (input.startsAt && input.endsAt && input.endsAt <= input.startsAt) {
+      ctx.addIssue({ code: "custom", path: ["endsAt"], message: "The end must come after the start" });
+    }
+  })
+  .transform((input) => ({
+    code: input.code,
+    kind: input.kind,
+    value:
+      input.kind === "percent"
+        ? Number(input.percent)
+        : input.kind === "fixed"
+          ? Math.round(Number(input.amount.replace(/[\s,]/g, "")) * 1000)
+          : 0,
+    minSubtotalCents: input.minSubtotal ?? 0,
+    maxDiscountCents: input.kind === "percent" ? input.maxDiscount : null,
+    startsAt: input.startsAt,
+    endsAt: input.endsAt,
+    maxRedemptions: input.maxRedemptions,
+    oncePerCustomer: input.oncePerCustomer,
+    note: input.note,
+  }));

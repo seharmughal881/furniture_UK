@@ -1,7 +1,8 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { cartSavings, type Cart, type Material } from "@/lib/types";
+import { orderTotals } from "@/lib/pricing";
+import { cartSavings, EMPTY_CART, type Cart, type Material } from "@/lib/types";
 
 export type AddItem = {
   productSlug: string;
@@ -20,11 +21,16 @@ type CartCtx = {
   add: (items: AddItem[], fx?: FlyFrom) => Promise<boolean>;
   setQuantity: (lineId: number, quantity: number) => Promise<void>;
   refresh: () => Promise<void>;
+  /** Save (or clear, with "") the customer's note on the basket. */
+  setNote: (note: string) => Promise<boolean>;
+  /** Pick the governorate the delivery estimate is for; "" returns to nationwide terms. */
+  setGovernorate: (governorate: string) => Promise<void>;
+  /** Try a discount code. Resolves to an error message, or null when it was accepted. */
+  applyCoupon: (code: string) => Promise<string | null>;
+  removeCoupon: () => Promise<void>;
   materialName: (slug: string) => string | null;
   materialHex: (slug: string) => string | null;
 };
-
-const EMPTY: Cart = { lines: [], count: 0, subtotalCents: 0, savingsCents: 0 };
 
 type FlyFrom = { from?: Element | null; image?: string | null };
 
@@ -62,7 +68,7 @@ function flyToBasket({ from, image }: FlyFrom) {
 const Ctx = createContext<CartCtx | null>(null);
 
 export function CartProvider({ materials, children }: { materials: Material[]; children: React.ReactNode }) {
-  const [cart, setCart] = useState<Cart>(EMPTY);
+  const [cart, setCart] = useState<Cart>(EMPTY_CART);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,7 +81,7 @@ export function CartProvider({ materials, children }: { materials: Material[]; c
   useEffect(() => {
     let alive = true;
     fetch("/api/cart", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : EMPTY))
+      .then((r) => (r.ok ? r.json() : EMPTY_CART))
       .then((c) => alive && setCart(c))
       .catch(() => {});
     return () => {
@@ -108,11 +114,31 @@ export function CartProvider({ materials, children }: { materials: Material[]; c
     // optimistic update, then reconcile with the server
     setCart((c) => {
       const lines = c.lines.map((l) => (l.id === lineId ? { ...l, quantity } : l)).filter((l) => l.quantity > 0);
+      const subtotalCents = lines.reduce((n, l) => n + l.quantity * l.unitPriceCents, 0);
+      /*
+       * The discount is carried over and re-clamped rather than recomputed, because the
+       * browser is not told a coupon's percentage or its rules -- only what it is worth
+       * right now. orderTotals() does the clamping, so a basket shrunk below a fixed-amount
+       * code cannot flash a negative total in the half-second before the server replies.
+       *
+       * The server's answer lands immediately after and is authoritative: a coupon that
+       * has stopped qualifying disappears then, which is the only place that decision is
+       * ever made.
+       */
+      const totals = orderTotals({
+        subtotalCents,
+        discountCents: c.coupon?.discountCents ?? 0,
+        shippingCents: c.shipping?.feeCents ?? null,
+      });
       return {
+        ...c,
         lines,
         count: lines.reduce((n, l) => n + l.quantity, 0),
-        subtotalCents: lines.reduce((n, l) => n + l.quantity * l.unitPriceCents, 0),
+        subtotalCents,
         savingsCents: cartSavings(lines),
+        discountCents: totals.discountCents,
+        totalCents: totals.totalCents,
+        deliveryTbc: totals.deliveryTbc,
       };
     });
     const res = await fetch(`/api/cart/items/${lineId}`, {
@@ -122,6 +148,49 @@ export function CartProvider({ materials, children }: { materials: Material[]; c
     }).catch(() => null);
     if (res?.ok) setCart(await res.json());
   }, []);
+
+  /**
+   * One shape for the three new basket actions.
+   *
+   * Each returns the whole basket, so the discount, the delivery quote and the totals
+   * always arrive together and already agreed with each other. Reconstructing them
+   * piecemeal in the browser is what lets a cart drawer show a total the checkout then
+   * contradicts.
+   */
+  const patch = useCallback(async (path: string, method: string, body?: unknown) => {
+    const res = await fetch(`/api/cart/${path}`, {
+      method,
+      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }).catch(() => null);
+    const data = await res?.json().catch(() => null);
+    if (res?.ok && data) setCart(data);
+    // A rejected coupon still returns the basket as it stands, so the drawer can show the
+    // unchanged totals beside the error instead of going blank.
+    else if (data?.cart) setCart(data.cart);
+    return { ok: !!res?.ok, error: typeof data?.error === "string" ? data.error : null };
+  }, []);
+
+  const setNote = useCallback(async (note: string) => (await patch("note", "PUT", { note })).ok, [patch]);
+
+  const setGovernorate = useCallback(
+    async (governorate: string) => {
+      await patch("shipping", "PUT", { governorate });
+    },
+    [patch],
+  );
+
+  const applyCoupon = useCallback(
+    async (code: string) => {
+      const r = await patch("coupon", "POST", { code });
+      return r.ok ? null : (r.error ?? "We couldn't apply that code. Please try again.");
+    },
+    [patch],
+  );
+
+  const removeCoupon = useCallback(async () => {
+    await patch("coupon", "DELETE");
+  }, [patch]);
 
   const value = useMemo<CartCtx>(() => {
     const bySlug = new Map(materials.map((m) => [m.slug, m]));
@@ -134,10 +203,14 @@ export function CartProvider({ materials, children }: { materials: Material[]; c
       add,
       setQuantity,
       refresh,
+      setNote,
+      setGovernorate,
+      applyCoupon,
+      removeCoupon,
       materialName: (s) => bySlug.get(s)?.name ?? null,
       materialHex: (s) => bySlug.get(s)?.hex ?? null,
     };
-  }, [cart, open, busy, error, add, setQuantity, refresh, materials]);
+  }, [cart, open, busy, error, add, setQuantity, refresh, setNote, setGovernorate, applyCoupon, removeCoupon, materials]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

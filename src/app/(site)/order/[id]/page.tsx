@@ -40,6 +40,7 @@ async function ThankYou({ params }: { params: PageProps<"/order/[id]">["params"]
             o.created_at < now() - interval '7 days' AS "expired",
             o.delivery_fee_tbc AS "feeTbc", o.payment_method AS "payment", o.vat_cents AS "vat",
             o.subtotal_cents AS "subtotal", o.shipping_cents AS "shipping", o.total_cents AS "total",
+            o.discount_cents AS "discount", o.coupon_code AS "coupon", o.customer_note AS "note",
             coalesce(json_agg(json_build_object('name', i.product_name, 'qty', i.quantity, 'price', i.unit_price_cents)
                      ORDER BY i.id) FILTER (WHERE i.id IS NOT NULL), '[]') AS items
      FROM orders o LEFT JOIN order_items i ON i.order_id = o.id
@@ -134,6 +135,12 @@ async function ThankYou({ params }: { params: PageProps<"/order/[id]">["params"]
               </li>
             ))}
           </ul>
+          {o.discount > 0 && (
+            <div className="row discount-row">
+              <span>Discount {o.coupon && <i>{o.coupon}</i>}</span>
+              <strong>−{formatPrice(o.discount)}</strong>
+            </div>
+          )}
           <div className="row">
             <span>Delivery</span>
             <span>{o.feeTbc ? "Confirmed by phone" : o.shipping === 0 ? "Free" : formatPrice(o.shipping)}</span>
@@ -143,6 +150,13 @@ async function ThankYou({ params }: { params: PageProps<"/order/[id]">["params"]
             <strong>{formatPrice(o.total)}</strong>
           </div>
           {o.vat > 0 && <p className="hint">Includes VAT at 5%: {formatPrice(o.vat)}</p>}
+          {/* Read back to the customer so they can see their instruction was received,
+              which is the only confirmation they get that the team has it. */}
+          {o.note && (
+            <p className="hint">
+              <strong>Your note:</strong> {o.note}
+            </p>
+          )}
         </div>
         <div className="ticket-stub">
           <p className="label">Order</p>

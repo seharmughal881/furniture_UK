@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, IBM_Plex_Sans_Arabic, Instrument_Serif } from "next/font/google";
+import { Geist, Geist_Mono, IBM_Plex_Sans_Arabic } from "next/font/google";
 import { getCompany } from "@/lib/content/company";
 import { getContent } from "@/lib/content/read";
 
@@ -11,6 +11,12 @@ import { getContent } from "@/lib/content/read";
  * this file free of both means /admin never downloads three.js, never renders the shop
  * header, and never pays for the two catalogue queries the storefront needs.
  *
+ * Three faces, no display serif. The site ran on Instrument Serif until it was measured
+ * against the shops it competes with: IKEA serves Noto Sans, Wayfair serves Roboto and
+ * Article serves Proxima Nova -- none of the large furniture retailers sets a serif. More
+ * decisively, Instrument Serif ships only Regular and Italic, so every bold price and
+ * heading on the site was either rendered at 400 or faked by the browser.
+ *
  * The fonts stay here, on <html>, so both sections can use them -- the Arabic face in
  * particular, because customer names and landmarks on an admin delivery note are often
  * written in Arabic.
@@ -19,7 +25,6 @@ import { getContent } from "@/lib/content/read";
 const sans = Geist({ variable: "--font-sans", subsets: ["latin"] });
 const mono = Geist_Mono({ variable: "--font-mono", subsets: ["latin"] });
 const arabic = IBM_Plex_Sans_Arabic({ variable: "--font-arabic", subsets: ["arabic"], weight: ["400", "500"] });
-const serif = Instrument_Serif({ variable: "--font-serif", subsets: ["latin"], weight: "400", style: ["normal", "italic"] });
 
 /**
  * Titles, description and sharing picture come from the back office ("Search engines &
@@ -55,7 +60,7 @@ export async function generateMetadata(): Promise<Metadata> {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     // suppressHydrationWarning: the inline script below may add data-welcomed to <html> before React loads
-    <html lang="en" className={`${sans.variable} ${mono.variable} ${serif.variable} ${arabic.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${sans.variable} ${mono.variable} ${arabic.variable}`} suppressHydrationWarning>
       <head>
         {/* product photos come from Shopify's CDN: open the connection early, once per page */}
         <link rel="preconnect" href="https://cdn.shopify.com" />

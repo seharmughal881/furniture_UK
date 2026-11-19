@@ -1,7 +1,7 @@
 import "server-only";
 import { cacheLife, cacheTag } from "next/cache";
 import { pool } from "./db";
-import type { Material, Product, ProductSummary, Review, Store } from "./types";
+import type { HomeReview, Material, Product, ProductSummary, Review, Store } from "./types";
 
 const PRODUCT_COLUMNS = `id, slug, name, kind, tagline, description, price_cents AS "priceCents",
   lead_time_weeks AS "leadTimeWeeks", width_cm AS "widthCm", depth_cm AS "depthCm", height_cm AS "heightCm",
@@ -76,6 +76,39 @@ export async function getReviews(productId: number): Promise<Review[]> {
      WHERE product_id = $1 AND status = 'approved'
      ORDER BY is_demo, created_at DESC LIMIT 50`,
     [productId],
+  );
+  return rows;
+}
+
+/**
+ * The newest approved reviews across the whole catalogue, for the home page.
+ *
+ * Approved only, exactly like getReviews() and the rating shown on a product card: a
+ * review is held as `pending` when it is submitted and becomes visible once it is
+ * approved in the back office. The home page is the most public surface on the site, so
+ * it is the last place that should show text nobody has read yet.
+ *
+ * Tagged "reviews" so approving one in the back office refreshes this too --
+ * moderation.ts already calls revalidateTag("reviews") for the product pages.
+ *
+ * Demo rows sort last and real customers first, which is the same order getReviews()
+ * uses; a seeded sample should never outrank something a customer actually wrote.
+ */
+export async function getHomeReviews(limit = 6): Promise<HomeReview[]> {
+  "use cache";
+  cacheLife("hours");
+  cacheTag("reviews", "catalog");
+  const { rows } = await pool.query(
+    `SELECT r.id, r.author, r.rating, r.title, r.body, r.is_demo AS "isDemo",
+            r.created_at::text AS "createdAt",
+            p.name AS "productName", p.slug AS "productSlug",
+            COALESCE(p.images[1], '') AS "productImage"
+     FROM reviews r
+     JOIN products p ON p.id = r.product_id
+     WHERE r.status = 'approved' AND p.active
+     ORDER BY r.is_demo, r.created_at DESC
+     LIMIT $1`,
+    [limit],
   );
   return rows;
 }

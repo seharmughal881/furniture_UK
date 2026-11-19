@@ -69,6 +69,16 @@ export type Review = {
   createdAt: string;
 };
 
+/**
+ * A review as the home page shows it: the review plus the piece it is about, so the card
+ * can say what was bought and link to it.
+ */
+export type HomeReview = Review & {
+  productName: string;
+  productSlug: string;
+  productImage: string;
+};
+
 export type CartLine = {
   id: number;
   slug: string;

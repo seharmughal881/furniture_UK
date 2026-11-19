@@ -60,7 +60,25 @@ export async function generateMetadata(): Promise<Metadata> {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     // suppressHydrationWarning: the inline script below may add data-welcomed to <html> before React loads
-    <html lang="en" className={`${sans.variable} ${mono.variable} ${arabic.variable}`} suppressHydrationWarning>
+    //
+    // data-scroll-behavior="smooth" is required, not decorative. globals.css sets
+    // `html { scroll-behavior: smooth }` for in-page anchor jumps. On a route change the
+    // router sets `scrollTop = 0`, and it only suspends smooth scrolling first if this
+    // attribute is present -- see disableSmoothScrollDuringRouteTransition in
+    // next/dist/shared/lib/router/utils/disable-smooth-scroll.js, which bails out early
+    // when it is missing and warns in development.
+    //
+    // Without it, going from the grid to a product animated the scroll to the top over
+    // ~475ms instead of jumping. Streamed content landed during that window, and the
+    // browser re-applied the grid's old scroll offset to the now-taller page, so the
+    // product opened part-way down. The attribute makes that scroll instant, closing the
+    // window. Removing it brings the bug back.
+    <html
+      lang="en"
+      className={`${sans.variable} ${mono.variable} ${arabic.variable}`}
+      data-scroll-behavior="smooth"
+      suppressHydrationWarning
+    >
       <head>
         {/* product photos come from Shopify's CDN: open the connection early, once per page */}
         <link rel="preconnect" href="https://cdn.shopify.com" />

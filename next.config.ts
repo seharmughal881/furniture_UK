@@ -96,6 +96,13 @@ const nextConfig: NextConfig = {
   distDir: process.env.NEXT_DIST_DIR || ".next",
   cacheComponents: true,
   partialPrefetching: true,
+
+  /**
+   * Set by `next upgrade --agent=security` when this app was moved from 16.4.2 to 16.4.6
+   * to clear a published advisory. It records that the last upgrade here was a security
+   * one; it does not change how the app builds or runs.
+   */
+  experimental: { agentUpgrade: "security" },
   turbopack: {
     rules: {
       "*.css": {

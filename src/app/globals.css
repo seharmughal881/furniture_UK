@@ -9443,3 +9443,362 @@ input[type="range"] {
   font-weight: 600;
   letter-spacing: -0.01em;
 }
+
+
+/* ================================================================ typography audit
+   Nine fixes from a pass over the whole sheet. Appended, because the cascade order here
+   is the point: these are corrections to rules above, and at equal specificity the last
+   one wins. Where a rule above lives inside a media query, the mobile value is restated
+   at the bottom of this block -- an unconditional rule down here would otherwise beat it.
+   ------------------------------------------------------------------------------- */
+
+/* 1. A base leading. The sheet had none: body set family, colour and background and no
+      line-height, and there was not a single h1-h6 element rule in 9,445 lines. So every
+      paragraph without its own rule -- .shop-head p, .card-body p, .product-panel
+      .tagline, .crumbs, .field -- inherited `normal`, which Geist reports as ~1.2.
+      Headline leading on body copy. */
+body {
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+/* Headings must not take 1.55. An element selector is (0,0,1), so every `.class h2` rule
+   above still wins; this only reaches the headings that had nothing at all. */
+h1, h2, h3, h4, h5, h6 {
+  line-height: 1.15;
+}
+
+/* Controls inherit line-height too. Without this every pill grows about 5px and the
+   header, the filter row and the card actions all shift. */
+.btn,
+.chip,
+.nav-link,
+.cart-btn,
+.card-act,
+.icon-btn,
+button,
+input,
+select,
+textarea {
+  line-height: 1.2;
+}
+
+/* 2. Five display rules the serif removal missed. The replacement block above lists 41
+      selectors by name, and these five were not among them -- so they were still setting
+      a grotesque at weight 400 at up to 80px, which is the exact thin, washed-out look
+      that change existed to end.
+
+      Why each was missed: .checkout h1 and .showroom-info h2 share a declaration with a
+      sibling that WAS listed, so only the sibling got the override;
+      .reviews .section-head h2 is (0,2,1) and outranks the listed .section-head h2;
+      .ticket-stub strong and .spec strong got their family from the money block but
+      never a weight. */
+.checkout h1,
+.reviews .section-head h2,
+.showroom-info h2 {
+  font-weight: 700;
+}
+.ticket-stub strong {
+  font-weight: 650;
+}
+.spec strong {
+  font-weight: 600;
+}
+
+/* 3. Input borders were rgba(17,17,17,0.12), which composites to #e2e2e2 -- 1.3:1 against
+      the field background. WCAG 2.2 section 1.4.11 wants 3:1 for the boundary of any
+      control a user has to find. 0.48 composites to about #888 on --paper: 3.3:1.
+
+      --line itself is untouched and stays at 0.12: it draws decorative hairlines between
+      sections, and those carry no contrast requirement. Only the control chrome moves. */
+:root {
+  --line-input: rgba(17, 17, 17, 0.48);
+}
+.field input,
+.field select,
+.field textarea,
+.check input {
+  border-color: var(--line-input);
+}
+
+/* 4. One face for money. The same number was set in two typefaces depending on the page:
+      sans on the product page (.price-row strong), monospace in the grid, the basket line
+      and search. Monospace for prices is a defensible system; two systems is not. The
+      tabular-nums group above already does the column-alignment job monospace was there
+      for, so --mono goes back to what it is good at: codes, SKUs and tracked labels. */
+.card-body .price,
+.price-line strong,
+.search-results .price {
+  font-family: var(--sans);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+.card-body .price,
+.search-results .price {
+  font-size: 15px;
+  font-weight: 600;
+}
+.price-line strong {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* 5. Tracking that scales with size. The display block above ends with a single
+      -0.021em applied to all 41 selectors at once -- to .shop-head h1 at 104px and to
+      .hero-piece b at 17px alike. Optical tracking has to move inversely with size: that
+      value is far too loose on a 100px headline and slightly too tight under 20px.
+
+      Only selectors whose size was actually measured are listed. Anything not named here
+      keeps the -0.021em default rather than being moved on a guess. */
+
+/* 64px and up, measured at their clamp ceiling */
+.clock,
+.footer-big,
+.big-rating,
+.welcome-title,
+.shop-head h1,
+.section-head h2,
+.thanks h1,
+.showroom-intro h1,
+.product-panel h1,
+.prose h1,
+.page-title,
+.checkout h1,
+.order h1,
+.empty h1,
+.teaser-copy h2,
+.map-copy h2,
+.related h2,
+.how-num {
+  letter-spacing: -0.035em;
+}
+
+/* 26px to 54px */
+.cc-num,
+.why-title,
+.planner-side h1,
+.prose h2,
+.qv-info h2,
+.showroom-info h2,
+.showroom-others h2,
+.mhero-copy h1,
+.card-body h3,
+.drawer-head h2,
+.summary h2,
+.room-meta h3,
+.how-step strong,
+.order-grid h2,
+.store-card h2,
+.layers-total strong,
+.cc-info strong,
+.spec strong {
+  letter-spacing: -0.022em;
+}
+
+/* under 24px: a grotesque wants to be left nearly alone down here */
+.hero-piece b {
+  letter-spacing: -0.005em;
+}
+
+/* 6. A floor under the micro-copy. Thirteen rules set 10px and one set 9px, which is not
+      readable on a phone. 11px is fine for uppercase letter-spaced labels, where the caps
+      height carries it; anything sentence-case needs 12px. */
+.label,
+.card-cat,
+.rv-label,
+.tag,
+.soon-tag,
+.badge {
+  font-size: 11px;
+}
+.tag {
+  letter-spacing: 0.1em;
+}
+.card-hint,
+.nav-logo span,
+.hero-piece small,
+.mhero-tag small,
+.pay-word.apple {
+  font-size: 12px;
+}
+.pay-word.visa,
+.pay-word.epp {
+  font-size: 11px;
+}
+
+/* 7. Actions that read as actions. .btn declared no font-weight at all, so every button
+      on the site was 400 at 14px -- against an 800 logo and 700 headlines a 400 pill
+      reads as a tag, not something to press. Same for the nav and the filter chips. */
+.btn {
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.005em;
+}
+.btn.solid {
+  font-weight: 600;
+}
+.nav-link {
+  font-weight: 500;
+}
+.chip {
+  font-weight: 500;
+}
+.chip.on {
+  font-weight: 600;
+}
+
+/* 8. Labels and errors were the smallest text in the checkout: a 13px label over a 16px
+      input, with the validation message dropping to 12px. The error is the one line that
+      has to be read. (The 16px on the input itself is deliberate and stays -- below 16px
+      iOS zooms the page on focus.) */
+.field {
+  font-size: 14px;
+  font-weight: 500;
+  gap: 7px;
+}
+.field em,
+.field-error {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+/* 9. The announcement bar carries the whole offer -- free delivery over OMR 75, 4-6 days
+      -- and was set at 12px/400. Contrast was never the problem there (10.3:1); size was. */
+.announce {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+/* ---- mobile values restated -------------------------------------------------------
+   Both of these exist in media queries above. An unconditional rule in this block would
+   win over them at equal specificity and undo the mobile sizing, so they are re-declared
+   here at the same breakpoints, after the rules that would have clobbered them. */
+@media (max-width: 900px) {
+  .announce {
+    font-size: 12px;
+  }
+}
+@media (max-width: 720px) {
+  .price-line strong {
+    font-size: 14px;
+  }
+}
+
+/* 4b. The rest of the money. The first pass above caught the grid, the basket line and
+       search; a screenshot of a real checkout showed five more figures still set in the
+       monospace face -- the order-summary line price, the struck was-price beside it, the
+       "you save" figure, the basket drawer line and the mobile buy bar. All of them sat
+       next to a sans total, which is the mismatch this fix exists to remove.
+
+       --mono keeps the things it is actually for: .tag, .card-cat, .label, .badge,
+       .search-input kbd, .prose code -- codes and tracked uppercase labels, not prices. */
+.summary li > span,
+.sum-price,
+.saved-row strong,
+.line-right strong,
+.buy-bar span {
+  font-family: var(--sans);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+.summary li > span,
+.line-right strong {
+  font-weight: 500;
+}
+.saved-row strong {
+  font-weight: 600;
+}
+
+
+/* ================================================================ product title size
+   The PDP h1 was display type at clamp(40px, 4vw, 64px)/0.96 and weight 700, inherited
+   from the headline group above. That was sized for a two-word furniture name ("Oslo
+   Sofa"); the lighting catalogue ships names like "Alberta Downlight 7 Watts 3000K
+   (7.5 cm Cut-Out)", which at 64px wrapped to three lines and pushed the price, the
+   stock pill and both buy buttons down the panel.
+
+   Smaller and a step lighter: 40px tops instead of 64px, weight 600 instead of 700.
+   Appended because the weight has to beat the `.product-panel h1` listed in the
+   headline group near line 9395 -- equal specificity, so only order decides it. The
+   720px value is restated here for the same reason: the unconditional rule at ~7408
+   already beat the mobile one, so that media query had been dead. */
+.product-panel h1 {
+  font-size: clamp(30px, 2.6vw, 40px);
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -0.015em;
+}
+@media (max-width: 720px) {
+  .product-panel h1 {
+    font-size: clamp(26px, 7vw, 32px);
+  }
+}
+
+/* ---------------------------------------------------------------- footer sign-off
+   Two faults, and they were feeding each other.
+
+   1. .footer-top is a two-column grid with THREE children: .footer-logo, .footer-big and
+      .newsletter. The logo was added to an existing two-column layout without
+      re-balancing it, so the browser flowed the newsletter onto an implicit second row
+      and left the cell beside it empty. `align-items: end` then sank the logo to the
+      bottom of a row whose height came from the headline -- which is what opened the
+      large blank area above it.
+
+   2. clamp(..., 150px) is hero size, not a sign-off at the bottom of a page. The markup
+      is two lines ("See it first," / "love it at home."), but at 150px in a column that
+      was the NARROWER of the two (1.4fr went to the logo) each line broke again, giving
+      four. That made row one taller, which made the hole bigger.
+
+   Fixed together: explicit grid areas so nothing is left empty, the proportions turned
+   round so the sentence gets the wider column, and a ceiling that keeps it to the two
+   lines it is written as. */
+
+.footer-big {
+  font-size: clamp(38px, 4.6vw, 76px);
+  line-height: 0.98;
+  text-wrap: balance;
+}
+
+@media (min-width: 1000px) {
+  .footer-top {
+    /* was 1.4fr 1fr -- the logo had the wider column and the sentence the narrower one */
+    grid-template-columns: minmax(240px, 0.85fr) 1.15fr;
+    grid-template-areas:
+      "brand line"
+      "news  line";
+    align-items: start;
+    column-gap: clamp(48px, 6vw, 96px);
+    row-gap: 56px;
+  }
+  .footer-logo {
+    grid-area: brand;
+    margin-bottom: 0;
+  }
+  /* Centred against the brand and newsletter stacked beside it, so the three read as one
+     block rather than three things that happen to share a row.
+
+     justify-self: end takes the box off the grid's default stretch and shrinks it to its
+     widest line, so the sentence sits against the page gutter instead of floating in the
+     middle of its column with a gap to the right. The text stays left-aligned inside that
+     box, so both lines still share a clean left edge -- flush-right ragged-left would
+     fight the italic second line. */
+  .footer-big {
+    grid-area: line;
+    align-self: center;
+    justify-self: end;
+  }
+  .newsletter {
+    grid-area: news;
+    align-self: end;
+  }
+}
+
+/* The phone override above was clamp(44px, 13vw, 72px) -- 72px on a 720px screen is the
+   same mistake at a smaller size. */
+@media (max-width: 720px) {
+  .footer-big {
+    font-size: clamp(32px, 8.5vw, 52px);
+  }
+}

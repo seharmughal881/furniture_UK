@@ -1,5 +1,10 @@
 // Time-of-day model: hour (6..22) -> sun, ambient, sky colours and lamp glow.
-import * as THREE from "three";
+//
+// Deliberately free of three.js. HeroStory calls this for nothing but sky colours, and the
+// old `import * as THREE` meant the home page carried the whole engine to get them. The sun
+// direction is a plain tuple; SceneLights, which is inside a 3D chunk anyway, feeds it to a
+// Vector3 there.
+import { Color } from "@/lib/color";
 
 type Key = {
   h: number;
@@ -21,12 +26,24 @@ const KEYS: Key[] = [
   { h: 22.0, sun: "#d9a06a", sunI: 0.35, amb: 0.14, skyTop: "#0f0b0c", skyBottom: "#33100f", glow: 1 },
 ];
 
-const ca = new THREE.Color();
-const cb = new THREE.Color();
+const ca = new Color();
+const cb = new Color();
 const mixHex = (a: string, b: string, t: number) => `#${ca.set(a).lerp(cb.set(b), t).getHexString()}`;
 
+type Vec3 = [number, number, number];
+const norm = ([x, y, z]: Vec3): Vec3 => {
+  const l = Math.hypot(x, y, z) || 1;
+  return [x / l, y / l, z / l];
+};
+const mix = (a: Vec3, b: Vec3, t: number): Vec3 => [
+  a[0] + (b[0] - a[0]) * t,
+  a[1] + (b[1] - a[1]) * t,
+  a[2] + (b[2] - a[2]) * t,
+];
+
 export type Daylight = {
-  sunDir: THREE.Vector3;
+  /** Unit vector, [x, y, z]. */
+  sunDir: [number, number, number];
   sunColor: string;
   sunIntensity: number;
   ambient: number;
@@ -47,8 +64,8 @@ export function daylightAt(hour: number): Daylight {
   const dayT = Math.min(1, (h - 6) / 14);
   const az = Math.PI * (0.1 + dayT * 0.8);
   const el = Math.max(0.12, Math.sin(dayT * Math.PI) * 1.05);
-  const sunDir = new THREE.Vector3(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * 0.6 + 0.5).normalize();
-  if (h > 20) sunDir.lerp(new THREE.Vector3(-0.3, 1, 0.6).normalize(), (h - 20) / 2).normalize();
+  let sunDir = norm([Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * 0.6 + 0.5]);
+  if (h > 20) sunDir = norm(mix(sunDir, norm([-0.3, 1, 0.6]), (h - 20) / 2));
 
   return {
     sunDir,

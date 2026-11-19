@@ -3,6 +3,7 @@
 import { Html, OrbitControls, PerspectiveCamera, View } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
 import { useRouter, useSearchParams } from "next/navigation";
+import { use3D } from "@/components/Canvas3D";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
@@ -702,6 +703,9 @@ function PlannerScene({
 }
 
 export function Planner({ products }: { products: ProductSummary[] }) {
+  // The planner is a 3D room: opening the page is the request, so there is no button to wait for.
+  const { activate } = use3D();
+  useEffect(() => activate(), [activate]);
   const router = useRouter();
   const { add: addToCart, busy } = useCart();
   const params = useSearchParams();

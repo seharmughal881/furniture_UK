@@ -1,29 +1,18 @@
 "use client";
 
-import { PerspectiveCamera, View } from "@react-three/drei";
-import { useFrame, useThree } from "@react-three/fiber";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import * as THREE from "three";
+import { useAmbient3D } from "@/components/Canvas3D";
 import type { HeroSofa } from "@/lib/catalog";
+import { Color } from "@/lib/color";
 import { formatPrice } from "@/lib/types";
 import type { Material, Palette } from "@/lib/types";
-import { AiModel } from "@/three/AiModel";
-import { FOOTPRINT, HEIGHT } from "@/three/furniture";
 import { daylightAt, formatHour } from "@/three/daylight";
-import { Furniture } from "@/three/FurniturePiece";
-import { SceneLights, ShadowFloor } from "@/three/SceneLights";
+import { A_END, B_END, clamp01, hourAt, smooth } from "./heroTiming";
 
-const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
-const smooth = (a: number, b: number, x: number) => {
-  const t = clamp01((x - a) / (b - a));
-  return t * t * (3 - 2 * t);
-};
-
-// Scroll progress (0..1) -> chapter boundaries
-const A_END = 0.3; // assembly
-const B_END = 0.56; // material lab
-const hourAt = (p: number) => 13 + 9 * smooth(0.62, 0.97, p);
+/** three.js rides along with this chunk, so it is fetched only when the scene is wanted. */
+const HeroStoryScene = dynamic(() => import("./HeroStoryScene"), { ssr: false });
 // The story opens on the finished sofa: scrolling covers START..1 of the timeline (the wireframe
 // build-up before START is skipped). Raise START to 0 to bring the build-up back.
 const START: number = A_END;
@@ -57,109 +46,6 @@ function nearestMaterial(list: Material[], hex: string | undefined) {
   return best;
 }
 
-type Shot = { p: number; pos: [number, number, number]; target: [number, number, number] };
-const SHOTS: Shot[] = [
-  { p: 0.0, pos: [4.4, 3.1, 5.8], target: [0.4, 0.7, 0] },
-  { p: 0.27, pos: [2.9, 1.45, 3.7], target: [-0.1, 0.45, 0] },
-  { p: 0.4, pos: [2.5, 1.25, 3.3], target: [-0.85, 0.45, 0] },
-  { p: 0.54, pos: [1.5, 1.05, 3.5], target: [-1.05, 0.48, 0.1] },
-  { p: 0.7, pos: [1.2, 2.7, 6.6], target: [-0.7, 0.55, 0] },
-  { p: 1.0, pos: [-3.4, 2.1, 5.6], target: [-0.9, 0.6, 0] },
-];
-
-function shotAt(p: number, outPos: THREE.Vector3, outTarget: THREE.Vector3) {
-  let i = 0;
-  while (i < SHOTS.length - 2 && p > SHOTS[i + 1].p) i++;
-  const a = SHOTS[i];
-  const b = SHOTS[i + 1];
-  const t = smooth(a.p, b.p, p);
-  outPos.set(...a.pos).lerp(new THREE.Vector3(...b.pos), t);
-  outTarget.set(...a.target).lerp(new THREE.Vector3(...b.target), t);
-}
-
-function CameraRig({ progress }: { progress: React.RefObject<number> }) {
-  const { camera, pointer, size } = useThree();
-  const pos = useRef(new THREE.Vector3());
-  const target = useRef(new THREE.Vector3());
-  const look = useRef(new THREE.Vector3(0, 0.5, 0));
-
-  useFrame((_, dt) => {
-    shotAt(progress.current, pos.current, target.current);
-    // phones: pull back so the sofa fits the narrow frame
-    const aspect = size.width / size.height;
-    if (aspect < 1) {
-      pos.current.sub(target.current).multiplyScalar(1 + (1 - aspect) * 1.3).add(target.current);
-      target.current.x = target.current.x * 0.2;
-    }
-    // opening shot: keep the flying parts clear of the headline — the sofa sits to the right on wide
-    // screens and below the text on phones; the offset fades out as the sofa finishes building
-    const open = 1 - smooth(0.05, A_END, progress.current);
-    if (aspect < 1) {
-      // phones: the text sits at the bottom, so the sofa builds in the upper half
-      pos.current.y -= 0.7 * open;
-      target.current.y -= 0.7 * open;
-    } else {
-      pos.current.x -= 1.1 * open;
-      target.current.x -= 1.1 * open;
-    }
-    pos.current.x += pointer.x * 0.25;
-    pos.current.y += pointer.y * 0.12;
-    const k = 1 - Math.exp(-dt * 4);
-    camera.position.lerp(pos.current, k);
-    look.current.lerp(target.current, k);
-    camera.lookAt(look.current);
-  });
-  return null;
-}
-
-const EXTRAS = [
-  { kind: "armchair", pos: [-2.05, 0, 0.75], rot: 0.75 },
-  { kind: "coffeeTable", pos: [-0.1, 0, 1.3], rot: 0 },
-  { kind: "floorLamp", pos: [1.45, 0, -0.55], rot: 0 },
-  { kind: "sideTable", pos: [-1.4, 0, -0.35], rot: 0 },
-  { kind: "bookshelf", pos: [2.6, 0, -1.0], rot: -0.35 },
-] as const;
-
-function HeroScene({ progress, palette, sofa }: { progress: React.RefObject<number>; palette: Palette; sofa: HeroSofa | null }) {
-  const hour = () => hourAt(progress.current);
-  const glow = () => daylightAt(hour()).glow;
-  return (
-    <>
-      <PerspectiveCamera makeDefault fov={34} position={[4.4, 3.1, 5.8]} near={0.1} far={60} />
-      <CameraRig progress={progress} />
-      <SceneLights hour={hour} shadowSize={5} />
-      <ShadowFloor />
-      {/*
-        The hero builds Muscat Furniture's best-selling sofa set.
-
-        When that product has a real scanned model attached in the admin, the hero shows
-        the actual piece; until then it draws the sofa from parts, which is what makes
-        the assembly and the fabric swatches possible at all. A scanned mesh is one solid
-        object -- it cannot come apart or change fabric -- so the drawn sofa is not a
-        placeholder to be removed, it is the only version the story can animate.
-        Parts start close together and slightly into the build, so the first screen
-        already reads as a sofa.
-      */}
-      {sofa?.modelUrl ? (
-        <AiModel url={sofa.modelUrl} width={FOOTPRINT.sofa[0]} depth={FOOTPRINT.sofa[1]} height={HEIGHT.sofa} />
-      ) : (
-        <Furniture kind="sofa" palette={palette} spread={0.95} assembly={() => smooth(-0.07, A_END, progress.current)} />
-      )}
-      {EXTRAS.map((e, i) => (
-        <Furniture
-          key={e.kind}
-          kind={e.kind}
-          palette={palette}
-          position={e.pos as unknown as [number, number, number]}
-          rotation-y={e.rot}
-          glow={glow}
-          hideWhenUnbuilt
-          assembly={() => smooth(B_END + 0.01 + i * 0.025, B_END + 0.13 + i * 0.025, progress.current)}
-        />
-      ))}
-    </>
-  );
-}
 
 /**
  * The scroll-driven 3D story. Shown from tablet width up; phones get HeroMobile
@@ -191,6 +77,8 @@ export function HeroStory({ materials, sofa }: { materials: Material[]; sofa: He
    * canvas is client-only anyway, so there is nothing to hydrate into.
    */
   const [desktop, setDesktop] = useState(false);
+  // three.js only after the page is idle, and never on a phone.
+  const ready3D = useAmbient3D();
   useEffect(() => {
     const mq = window.matchMedia(`(min-width: ${DESKTOP}px)`);
     const read = () => setDesktop(mq.matches);
@@ -201,11 +89,11 @@ export function HeroStory({ materials, sofa }: { materials: Material[]; sofa: He
 
   useEffect(() => {
     if (!desktop) return;
-    const bp = new THREE.Color("#120d0f"); // warm near-black, matching the dark sections below
-    const bone = new THREE.Color("#ffffff");
-    const top = new THREE.Color();
-    const bottom = new THREE.Color();
-    const ink = new THREE.Color();
+    const bp = new Color("#120d0f"); // warm near-black, matching the dark sections below
+    const bone = new Color("#ffffff");
+    const top = new Color();
+    const bottom = new Color();
+    const ink = new Color();
     let id = 0;
     let lastChapter = -1;
     let last = performance.now();
@@ -229,10 +117,10 @@ export function HeroStory({ materials, sofa }: { materials: Material[]; sofa: He
       const build = smooth(0.12, A_END, p);
       const d = daylightAt(hourAt(p));
       const sky = smooth(0.6, 0.66, p);
-      top.copy(bp).lerp(bone, build).lerp(new THREE.Color(d.skyTop), sky);
-      bottom.copy(bp).lerp(bone, build).lerp(new THREE.Color(d.skyBottom), sky);
+      top.copy(bp).lerp(bone, build).lerp(new Color(d.skyTop), sky);
+      bottom.copy(bp).lerp(bone, build).lerp(new Color(d.skyBottom), sky);
       const night = smooth(0.4, 0.9, d.glow) * sky;
-      ink.set("#ffffff").lerp(new THREE.Color("#111111"), build * (1 - night));
+      ink.set("#ffffff").lerp(new Color("#111111"), build * (1 - night));
       st.style.setProperty("--sky-top", `#${top.getHexString()}`);
       st.style.setProperty("--sky-bottom", `#${bottom.getHexString()}`);
       st.style.setProperty("--stage-ink", `#${ink.getHexString()}`);
@@ -258,10 +146,8 @@ export function HeroStory({ materials, sofa }: { materials: Material[]; sofa: He
         <div className="stage-grid" />
       </div>
       <div className="stage">
-        {desktop && (
-          <View className="stage-view">
-            <HeroScene progress={progress} palette={palette} sofa={sofa} />
-          </View>
+        {desktop && ready3D && (
+          <HeroStoryScene progress={progress} palette={palette} sofa={sofa} />
         )}
 
         {/*

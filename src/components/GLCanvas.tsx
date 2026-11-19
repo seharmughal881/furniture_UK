@@ -12,22 +12,29 @@ import * as THREE from "three";
  * drei <View>s, which wait in the tunnel until <View.Port /> here mounts.
  */
 export default function GLCanvas({ eventSource }: { eventSource: RefObject<HTMLDivElement> }) {
-  // drop resolution on slow GPUs, raise it again when frames recover
-  const [dpr, setDpr] = useState(1.5);
+  /**
+   * Start low on a phone and let PerformanceMonitor earn the resolution back. 1.5 on a
+   * device with devicePixelRatio 3 is over four times the pixels of 1.0, paid on the very
+   * first frames -- exactly when the phone is still busy with the page itself.
+   */
+  const coarse = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
+  const [dpr, setDpr] = useState(coarse ? 1 : 1.5);
   return (
     <Canvas
       className="gl-canvas"
       eventSource={eventSource}
       shadows={{ type: THREE.PCFShadowMap }}
       dpr={dpr}
-      gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
+      // "high-performance" asks a laptop for its discrete GPU; on a phone there is no
+      // second GPU to pick, so it only signals "do not hold back on power".
+      gl={{ antialias: !coarse, alpha: true, powerPreference: coarse ? "default" : "high-performance" }}
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = 1.05;
       }}
     >
       <PerformanceMonitor
-        onIncline={() => setDpr(Math.min(2, window.devicePixelRatio))}
+        onIncline={() => setDpr(Math.min(coarse ? 1.5 : 2, window.devicePixelRatio))}
         onDecline={() => setDpr(1)}
         flipflops={3}
         onFallback={() => setDpr(1)}

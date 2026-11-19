@@ -33,7 +33,7 @@ export function SceneLights({
     last.current = h;
     const d = daylightAt(h);
     if (sun.current) {
-      sun.current.position.copy(d.sunDir).multiplyScalar(8);
+      sun.current.position.set(...d.sunDir).multiplyScalar(8);
       sun.current.color.set(d.sunColor);
       sun.current.intensity = d.sunIntensity;
     }

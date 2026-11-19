@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { SofaBuddy } from "./SofaBuddy";
 
 const AUTO_MS = 6500;
@@ -25,6 +25,8 @@ const FLOATERS = [
 export function Welcome() {
   const [phase, setPhase] = useState<"show" | "leave" | "gone">("show");
 
+  const rootRef = useRef<HTMLDivElement>(null);
+
   const leave = useCallback(() => {
     setPhase((p) => (p === "show" ? "leave" : p));
     setTimeout(() => setPhase("gone"), 900);
@@ -36,10 +38,32 @@ export function Welcome() {
     const t = setTimeout(leave, AUTO_MS);
     const onKey = (e: KeyboardEvent) => (e.key === "Escape" || e.key === "Enter") && leave();
     window.addEventListener("keydown", onKey);
+
+    /**
+     * Dismiss from the document, not only from the two buttons.
+     *
+     * Opening the home page runs view transitions while the tree hydrates, and for as
+     * long as one is running the browser paints snapshots instead of the live DOM. Those
+     * snapshots are not hit-testable, so a press on "Start shopping" or "Skip" lands on
+     * <html> and the buttons' own onClick never fires -- the screen simply ignored you.
+     * Measured: every press while a transition was in flight was swallowed; every press
+     * outside one worked.
+     *
+     * The event still reaches the document, so listening here catches those presses. It
+     * handles only the swallowed ones: when the press did reach a control inside the
+     * screen, that control's own handler runs and this bows out, so nothing fires twice.
+     */
+    const onPress = (e: MouseEvent) => {
+      if (e.target instanceof Node && rootRef.current?.contains(e.target)) return;
+      leave();
+    };
+    document.addEventListener("click", onPress, true);
+
     document.documentElement.style.overflow = "hidden";
     return () => {
       clearTimeout(t);
       window.removeEventListener("keydown", onKey);
+      document.removeEventListener("click", onPress, true);
       document.documentElement.style.overflow = "";
     };
   }, [leave]);
@@ -55,7 +79,12 @@ export function Welcome() {
   const title = "Muscat Furniture";
 
   return (
-    <div className={`welcome ${phase === "leave" ? "leaving" : ""}`} role="dialog" aria-label="Welcome to Muscat Furniture">
+    <div
+      ref={rootRef}
+      className={`welcome ${phase === "leave" ? "leaving" : ""}`}
+      role="dialog"
+      aria-label="Welcome to Muscat Furniture"
+    >
       <div className="welcome-blobs" aria-hidden>
         <i />
         <i />

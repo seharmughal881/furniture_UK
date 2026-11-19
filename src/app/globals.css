@@ -3773,6 +3773,34 @@ span.fly-dot {
   z-index: 100;
 }
 
+/*
+ * The welcome screen has to be named too, for the same reason and one level higher.
+ *
+ * Opening the home page runs two view transitions back to back (React re-renders as the
+ * tree hydrates), together spanning roughly the first second. For that whole second the
+ * three named groups above were painted in the transition layer -- over the welcome
+ * screen, which is only z-index 200 on the page and therefore cannot reach them. The
+ * header and the WhatsApp button sat on top of the greeting and then vanished when the
+ * second transition ended, which looked exactly like a flash of chrome on load.
+ *
+ * Raising .welcome's own z-index does nothing, because no page z-index can out-rank that
+ * layer -- the comment above says as much. It has to be in the layer as well, above them.
+ */
+.welcome {
+  view-transition-name: welcome;
+}
+
+::view-transition-group(welcome) {
+  z-index: 300;
+}
+
+/* It covers the screen outright; there is nothing to cross-fade with. */
+::view-transition-old(welcome),
+::view-transition-new(welcome) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
 /* The header does not cross-fade with the page; it simply stays. */
 ::view-transition-old(announce),
 ::view-transition-new(announce),

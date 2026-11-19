@@ -1141,3 +1141,31 @@ a.adm-stat:hover {
   gap: 6px;
   align-items: center;
 }
+
+/* ---------------------------------------------------- links dressed as buttons
+   `.adm a { color: inherit }` is (0,1,1); the button colours are only (0,1,0), so on an
+   <a> the generic rule won and the label took the surrounding ink. On the primary button
+   that is the same value as its own background, so "Add a product" on /admin/products
+   rendered as a solid dark rectangle with the text invisible inside it. The <button>
+   version of the same classes was unaffected -- `.adm a` never matched it -- which is
+   why "Sign in" looked right and this did not.
+
+   Restated here at (0,2,1) so an anchor cannot be overridden by the generic rule. Written
+   as `a.adm-btn*` rather than by excluding .adm-btn from `.adm a`: `:not(.adm-btn)` would
+   raise that rule to (0,2,1) too, and it would then outrank `.adm-chip.on` (0,2,0) and
+   blank out the selected filter pills instead -- swapping one invisible label for three. */
+.adm a.adm-btn {
+  color: var(--adm-ink);
+}
+.adm a.adm-btn-primary {
+  color: #fff;
+}
+.adm a.adm-btn-danger {
+  color: var(--adm-accent);
+}
+.adm a.adm-btn-quiet {
+  color: var(--adm-ink);
+}
+.adm-bar a.adm-btn-quiet {
+  color: #fff;
+}

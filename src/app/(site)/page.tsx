@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Footer } from "@/components/Footer";
 import { HeroMobile } from "@/components/home/HeroMobile";
+import { HomeReviews } from "@/components/home/HomeReviews";
 import { HeroStory } from "@/components/home/HeroStory";
 import { CountUp, Marquee } from "@/components/Motion";
 import { PlannerTeaser } from "@/components/home/PlannerTeaser";
@@ -8,7 +9,7 @@ import { RoomTiles } from "@/components/home/RoomTiles";
 import { CategoryRail, HowToOrder, ShowroomMap, TrustStrip } from "@/components/home/TrustSections";
 import { RecentlyViewed } from "@/components/product/RecentlyViewed";
 import { ProductGrid } from "@/components/shop/ProductCard";
-import { getHeroSofa, getMaterials, getProductIndex } from "@/lib/catalog";
+import { getHeroSofa, getHomeReviews, getMaterials, getProductIndex } from "@/lib/catalog";
 import { getContent } from "@/lib/content/read";
 import type { PlannerTeaserCopy } from "@/components/home/PlannerTeaser";
 import { shopifyImage } from "@/lib/images";
@@ -17,11 +18,12 @@ import { DELIVERY, formatPrice, savingPercent } from "@/lib/types";
 export default async function Home() {
   // The planner teaser is a client component (it drives a WebGL view), so its wording is
   // read here and passed down rather than fetched inside it.
-  const [products, materials, teaser, heroSofa] = await Promise.all([
+  const [products, materials, teaser, heroSofa, reviews] = await Promise.all([
     getProductIndex(),
     getMaterials(),
     getContent<PlannerTeaserCopy & { enabled: boolean }>("planner_teaser"),
     getHeroSofa(),
+    getHomeReviews(),
   ]);
   /*
    * Phones get a photo carousel in place of the 3D story (see HeroMobile), so the
@@ -142,6 +144,9 @@ export default async function Home() {
       </section>
 
       <HowToOrder />
+
+      {/* Renders nothing until a review has been approved in the back office. */}
+      <HomeReviews reviews={reviews} />
 
       {deals.length > 0 && (
         <section className="section" style={{ paddingTop: 0 }}>

@@ -5301,8 +5301,36 @@ html[data-welcomed] .welcome {
 }
 
 /* ======================================================= site-wide polish */
+
+/*
+ * Smooth scrolling for an in-page anchor jump, and nothing else.
+ *
+ * As a blanket `html { scroll-behavior: smooth }` this animated EVERY scroll, the ones
+ * the browser performs on its own included. Scroll the shop grid, then click a card
+ * while that scroll is still gliding, and the animation outlived the navigation: it kept
+ * running on the product page and dragged it back down, so the product opened part-way
+ * down instead of at the top. Measured at 1679px down a page that should have opened at
+ * 0; with scroll-behavior forced to auto the same click landed at 0.
+ *
+ * data-scroll-behavior="smooth" on <html> (see app/layout.tsx) is still needed and still
+ * does its job -- it lets the router suspend smooth scrolling for its own reset -- but it
+ * cannot cancel an animation that was already in flight when the click happened, which is
+ * exactly what a shopper creates by flicking the grid and tapping a card before it
+ * settles.
+ *
+ * Scoped to :target, the only thing that still animates is a jump to an id on the page,
+ * which is the one place the effect was wanted (#reviews). Explicit
+ * scrollIntoView({ behavior: "smooth" }) calls -- the planner, the category carousel --
+ * are unaffected, because they ask for smoothness rather than inheriting it.
+ */
 html {
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html:has(:target) {
+    scroll-behavior: smooth;
+  }
 }
 /* links: red underline that draws in */
 .footer-cols a,

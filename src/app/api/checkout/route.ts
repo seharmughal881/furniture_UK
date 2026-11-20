@@ -6,6 +6,7 @@ import { orderTotals, refusalMessage } from "@/lib/pricing";
 import { bucketFor, callerIp, hit } from "@/lib/rate-limit";
 import { NATIONWIDE, quoteShipping } from "@/lib/shipping";
 import { getZone } from "@/lib/shipping-data";
+import { claimStock } from "@/lib/stock";
 import { formatPrice, vatIncluded } from "@/lib/types";
 import { badRequest, checkoutSchema } from "@/lib/validation";
 
@@ -120,13 +121,39 @@ export async function POST(request: Request) {
     // sends none at all the basket's note stands.
     const note = d.note ?? cart.note;
 
+    /*
+     * Take the stock before the order is written. Anything that refuses from here on
+     * rolls the whole transaction back, so a refused order never leaves stock claimed.
+     */
+    const claimed = await claimStock(
+      client,
+      (cart.lines as (typeof cart.lines[number] & { productId: number })[]).map((l) => ({
+        productId: l.productId,
+        quantity: l.quantity,
+        name: l.name,
+      })),
+    );
+    if (!claimed.ok) {
+      await client.query("ROLLBACK");
+      return Response.json(
+        {
+          error:
+            claimed.left === 0
+              ? `${claimed.name} has just sold out. Please remove it from your basket, or call us and we will tell you when the next one lands.`
+              : `Only ${claimed.left} of ${claimed.name} ${claimed.left === 1 ? "is" : "are"} left. Please lower the quantity in your basket.`,
+          outOfStock: true,
+        },
+        { status: 409 },
+      );
+    }
+
     const { rows } = await client.query(
       `INSERT INTO orders (email, name, phone, address, address2, city, county, postcode, country, landmark,
                            shipping_method, payment_method, delivery_fee_tbc,
                            subtotal_cents, shipping_cents, total_cents, vat_cents,
                            discount_cents, coupon_code, customer_note)
        VALUES ($1,$2,$3,$4,$5,$6,$7,'','Oman',$8,'home-delivery',$9,$10,$11,$12,$13,$14,$15,$16,$17)
-       RETURNING id, number`,
+       RETURNING id, number, status`,
       [d.email, d.name, d.phone, d.area, d.building, d.wilaya, d.governorate, d.landmark, d.paymentMethod,
        totals.deliveryTbc, totals.subtotalCents, fee ?? 0, totals.totalCents, vatIncluded(totals.totalCents),
        totals.discountCents, couponCode, note],
@@ -157,6 +184,19 @@ export async function POST(request: Request) {
       }
     }
 
+    /*
+     * The order's own first event. Without this the history on an order began at the
+     * first thing an admin did to it, so an order nobody had touched yet showed an empty
+     * trail and there was no record of when it arrived or that the customer placed it.
+     * from_status is NULL because there was no previous state, which is the same shape
+     * setOrderStatus() writes.
+     */
+    await client.query(
+      `INSERT INTO order_events (order_id, admin_user_id, actor_name, from_status, to_status, note)
+       VALUES ($1, NULL, 'Customer', NULL, $2, '')`,
+      [order.id, order.status],
+    );
+
     for (const l of cart.lines as (typeof cart.lines[number] & { productId: number })[]) {
       await client.query(
         `INSERT INTO order_items (order_id, product_id, product_name, config, unit_price_cents, quantity)
@@ -169,7 +209,7 @@ export async function POST(request: Request) {
     // After COMMIT: the order exists either way, so a failure to clear the cookie must not
     // turn a placed order into a 500 that invites the customer to order again.
     await clearCartCookie().catch(() => {});
-    return Response.json({ order }, { status: 201 });
+    return Response.json({ order: { id: order.id, number: order.number } }, { status: 201 });
   } catch (err) {
     // Guarded like updateProduct(): on a dead connection ROLLBACK throws too, and an
     // unguarded await here would replace the real error with that one.
